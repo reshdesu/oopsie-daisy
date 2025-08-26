@@ -60,13 +60,13 @@ jobs:
     
     - name: Build macOS executable
       run: |
-        uv run python -m PyInstaller --clean --onefile --windowed --name "OopsieDaisy" --add-data "src/oopsie_daisy/styles.py:oopsie_daisy" --hidden-import "PySide6.QtCore" --hidden-import "PySide6.QtGui" --hidden-import "PySide6.QtWidgets" --hidden-import "send2trash" src/oopsie_daisy/__init__.py
+        uv run python -m PyInstaller --clean --onefile --windowed --name "OopsieDaisy-macOS" --add-data "src/oopsie_daisy/styles.py:oopsie_daisy" --hidden-import "PySide6.QtCore" --hidden-import "PySide6.QtGui" --hidden-import "PySide6.QtWidgets" --hidden-import "send2trash" src/oopsie_daisy/__init__.py
     
     - name: Upload macOS artifact
       uses: actions/upload-artifact@v4
       with:
         name: oopsie-daisy-macos
-        path: dist/OopsieDaisy
+        path: dist/OopsieDaisy-macOS
 
   build-linux:
     runs-on: ubuntu-latest
@@ -94,13 +94,13 @@ jobs:
     
     - name: Build Linux executable
       run: |
-        uv run python -m PyInstaller --clean --onefile --windowed --name "OopsieDaisy" --add-data "src/oopsie_daisy/styles.py:oopsie_daisy" --hidden-import "PySide6.QtCore" --hidden-import "PySide6.QtGui" --hidden-import "PySide6.QtWidgets" --hidden-import "send2trash" src/oopsie_daisy/__init__.py
+        uv run python -m PyInstaller --clean --onefile --windowed --name "OopsieDaisy-Linux" --add-data "src/oopsie_daisy/styles.py:oopsie_daisy" --hidden-import "PySide6.QtCore" --hidden-import "PySide6.QtGui" --hidden-import "PySide6.QtWidgets" --hidden-import "send2trash" src/oopsie_daisy/__init__.py
     
     - name: Upload Linux artifact
       uses: actions/upload-artifact@v4
       with:
         name: oopsie-daisy-linux
-        path: dist/OopsieDaisy
+        path: dist/OopsieDaisy-Linux
 
   create-release:
     needs: [build-windows, build-macos, build-linux]
@@ -126,8 +126,8 @@ jobs:
           
           ## Downloads
           - **Windows**: Download `OopsieDaisy.exe` - Just double-click to run!
-          - **macOS**: Download `OopsieDaisy` - You may need to allow it in Security settings
-          - **Linux**: Download `OopsieDaisy` - Make executable with `chmod +x OopsieDaisy`
+          - **macOS**: Download `OopsieDaisy-macOS` - You may need to allow it in Security settings
+          - **Linux**: Download `OopsieDaisy-Linux` - Make executable with `chmod +x OopsieDaisy-Linux`
           
           ## Features
           - 🔍 Easy one-click scanning for deleted files
@@ -146,8 +146,8 @@ jobs:
           **Made with 💖 by reshdesu and virtual kittens**
         files: |
           artifacts/oopsie-daisy-windows/OopsieDaisy.exe
-          artifacts/oopsie-daisy-macos/OopsieDaisy
-          artifacts/oopsie-daisy-linux/OopsieDaisy
+          artifacts/oopsie-daisy-macos/OopsieDaisy-macOS
+          artifacts/oopsie-daisy-linux/OopsieDaisy-Linux
         draft: false
         prerelease: false
       env:
