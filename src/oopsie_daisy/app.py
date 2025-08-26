@@ -144,6 +144,31 @@ class FileRecoveryThread(QThread):
         self.finished.emit()
 
 
+class AcceleratedScanThread(QThread):
+    progress_updated = Signal(int)
+    files_found = Signal(list)
+    finished = Signal()
+    
+    def __init__(self, folder_path: str):
+        super().__init__()
+        self.folder_path = Path(folder_path)
+        self.scanner = get_optimal_scanner()
+        
+    def run(self):
+        def progress_callback(progress):
+            self.progress_updated.emit(progress)
+        
+        try:
+            deleted_files = self.scanner.scan_folder_deep(self.folder_path, progress_callback)
+            self.files_found.emit(deleted_files)
+        except Exception as e:
+            # Handle errors gracefully
+            print(f"Accelerated scan error: {e}")
+            self.files_found.emit([])
+        finally:
+            self.finished.emit()
+
+
 class OopsieDaisyMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -439,6 +464,26 @@ class OopsieDaisyMainWindow(QMainWindow):
             color: rgba(255, 255, 255, 0.4);
         }
         
+        QPushButton[objectName=\"folder-scan-button\"] {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #4A90E2, stop:1 #357ABD);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+            padding: 12px 24px;
+        }
+        
+        QPushButton[objectName=\"folder-scan-button\"]:hover {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #5BA0F2, stop:1 #4A90E2);
+        }
+        
+        QPushButton[objectName=\"folder-scan-button\"]:pressed {
+            background: #357ABD;
+        }
+        
         /* Stats card */
         QWidget[objectName="stats-card"] {
             background: rgba(255, 255, 255, 0.1);
@@ -526,9 +571,40 @@ class OopsieDaisyMainWindow(QMainWindow):
         self.progress_label.setText("Scanning for deleted files...")
         self.status_label.setText("Scanning in progress")
         self.scan_button.setEnabled(False)
+        self.folder_scan_button.setEnabled(False)
         self.files_list.clear()
         
         self.recovery_thread = FileRecoveryThread(self.recovery_engine)
+        self.recovery_thread.files_found.connect(self.on_files_found)
+        self.recovery_thread.finished.connect(self.on_scan_finished)
+        self.recovery_thread.start()
+    
+    def start_folder_scan(self):
+        """Start scanning a specific folder chosen by user."""
+        if self.recovery_thread and self.recovery_thread.isRunning():
+            return
+            
+        # Ask user to select folder
+        folder_path = QFileDialog.getExistingDirectory(
+            self,
+            "🔍 Choose folder to scan for deleted files",
+            str(Path.home())
+        )
+        
+        if not folder_path:
+            return
+            
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 100)  # Determinate progress for folder scan
+        self.progress_label.setText(f"Deep scanning: {Path(folder_path).name}...")
+        self.status_label.setText("Deep folder scan in progress")
+        self.scan_button.setEnabled(False)
+        self.folder_scan_button.setEnabled(False)
+        self.files_list.clear()
+        
+        # Use accelerated scanner for folder scan
+        self.recovery_thread = AcceleratedScanThread(folder_path)
+        self.recovery_thread.progress_updated.connect(self.progress_bar.setValue)
         self.recovery_thread.files_found.connect(self.on_files_found)
         self.recovery_thread.finished.connect(self.on_scan_finished)
         self.recovery_thread.start()
@@ -549,6 +625,7 @@ class OopsieDaisyMainWindow(QMainWindow):
     def on_scan_finished(self):
         self.progress_bar.setVisible(False)
         self.scan_button.setEnabled(True)
+        self.folder_scan_button.setEnabled(True)
         
         file_count = len(self.found_files)
         self.files_count_label.setText(f"{file_count} files found")
@@ -559,7 +636,7 @@ class OopsieDaisyMainWindow(QMainWindow):
             self.restore_button.setEnabled(True)
         else:
             self.progress_label.setText("No files found")
-            self.status_label.setText("No deleted files found in common locations")
+            self.status_label.setText("No deleted files found in scanned locations")
             
     def restore_selected_files(self):
         selected_items = self.files_list.selectedItems()
