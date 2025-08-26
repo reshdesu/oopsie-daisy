@@ -9,12 +9,13 @@ import math
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, 
-    QPushButton, QLabel
+    QPushButton, QLabel, QStackedWidget
 )
 from PySide6.QtCore import Qt, QThread, QTimer, Signal, QPropertyAnimation, QEasingCurve, QRect, QPointF
 from PySide6.QtGui import QFont, QPixmap, QPalette, QColor, QBrush, QPen, QPainter
 
-from .recovery_wizard import RecoveryWizard
+from .recovery_wizard import DriveSelectionWidget, ScanModeWidget, ScanProgressWidget, ResultsWidget, RecoveryWizardThread
+from .advanced_recovery import AdvancedRecoveryEngine, RecoveryMode
 
 
 class RealStarryBackground(QWidget):
@@ -130,6 +131,9 @@ class RealStarryBackground(QWidget):
 class OopsieDaisyMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.engine = AdvancedRecoveryEngine()
+        self.recovery_thread = None
+        self.current_step = 0
         self.setup_ui()
         self.setup_style()
         
@@ -186,14 +190,24 @@ class OopsieDaisyMainWindow(QMainWindow):
         sidebar_layout.addWidget(brand_container)
         sidebar_layout.addSpacing(32)
         
-        # Main recovery button
-        self.recovery_button = QPushButton("🧙‍♀️ Start File Recovery")
-        self.recovery_button.setObjectName("primary-button")
-        self.recovery_button.clicked.connect(self.open_recovery_wizard)
-        self.recovery_button.setMinimumHeight(60)
-        self.recovery_button.setToolTip("Launch professional file recovery wizard")
+        # Navigation buttons for wizard steps
+        nav_container = QWidget()
+        nav_layout = QVBoxLayout(nav_container)
+        nav_layout.setSpacing(12)
         
-        sidebar_layout.addWidget(self.recovery_button)
+        self.back_btn = QPushButton("⬅️ Back")
+        self.back_btn.setObjectName("secondary-button")
+        self.back_btn.clicked.connect(self.go_back)
+        self.back_btn.setEnabled(False)
+        
+        self.next_btn = QPushButton("Next ➡️")
+        self.next_btn.setObjectName("primary-button")
+        self.next_btn.clicked.connect(self.go_next)
+        
+        nav_layout.addWidget(self.back_btn)
+        nav_layout.addWidget(self.next_btn)
+        
+        sidebar_layout.addWidget(nav_container)
         sidebar_layout.addSpacing(24)
         
         # Features section
@@ -224,7 +238,7 @@ class OopsieDaisyMainWindow(QMainWindow):
         sidebar_layout.addWidget(features_group)
         sidebar_layout.addStretch()
         
-        # Main content area
+        # Main content area with integrated wizard
         content_widget = QWidget()
         content_widget.setObjectName("main-content")
         
@@ -232,45 +246,37 @@ class OopsieDaisyMainWindow(QMainWindow):
         content_layout.setContentsMargins(40, 40, 40, 40)
         content_layout.setSpacing(24)
         
-        # Welcome content
-        welcome_widget = QWidget()
-        welcome_layout = QVBoxLayout(welcome_widget)
-        welcome_layout.setAlignment(Qt.AlignCenter)
-        welcome_layout.setSpacing(30)
+        # Step indicator header
+        self.step_indicator = QLabel("Step 1 of 4: Select Drive")
+        self.step_indicator.setStyleSheet("color: #FF69B4; font-size: 18px; font-weight: bold; margin: 10px;")
+        self.step_indicator.setAlignment(Qt.AlignCenter)
+        content_layout.addWidget(self.step_indicator)
         
-        # Large icon
-        icon_label = QLabel("🔮")
-        icon_label.setStyleSheet("font-size: 120px;")
-        icon_label.setAlignment(Qt.AlignCenter)
-        welcome_layout.addWidget(icon_label)
+        # Stacked widget for wizard steps (integrated into main content)
+        self.stack = QStackedWidget()
         
-        # Title
-        title_label = QLabel("Professional File Recovery")
-        title_label.setObjectName("content-title")
-        title_label.setAlignment(Qt.AlignCenter)
-        welcome_layout.addWidget(title_label)
+        # Step 1: Drive Selection
+        self.drive_widget = DriveSelectionWidget(self.engine)
+        self.drive_widget.drive_tree.itemSelectionChanged.connect(self.update_navigation)
+        self.stack.addWidget(self.drive_widget)
         
-        # Description
-        desc_text = """
-        <div style='text-align: center; color: rgba(255,255,255,0.8); font-size: 16px; line-height: 1.6;'>
-        <p><b>Recover your lost files like a pro!</b></p>
-        <p>Our advanced recovery wizard uses professional-grade techniques:</p>
-        <br>
-        <p>• <b>Deep Disk Scanning</b> - Analyzes file system structures</p>
-        <p>• <b>Signature Recovery</b> - Finds files even after formatting</p>
-        <p>• <b>GPU Acceleration</b> - Lightning-fast scanning with your graphics card</p>
-        <p>• <b>Multi-format Support</b> - Documents, images, videos, and more</p>
-        <br>
-        <p>Click the recovery button to get started! 🚀</p>
-        </div>
-        """
+        # Step 2: Scan Mode
+        self.mode_widget = ScanModeWidget()
+        self.stack.addWidget(self.mode_widget)
         
-        desc_label = QLabel(desc_text)
-        desc_label.setWordWrap(True)
-        desc_label.setMaximumWidth(600)
-        welcome_layout.addWidget(desc_label)
+        # Step 3: Scan Progress
+        self.progress_widget = ScanProgressWidget()
+        self.progress_widget.cancel_button.clicked.connect(self.cancel_scan)
+        self.stack.addWidget(self.progress_widget)
         
-        content_layout.addWidget(welcome_widget)
+        # Step 4: Results
+        self.results_widget = ResultsWidget()
+        self.stack.addWidget(self.results_widget)
+        
+        content_layout.addWidget(self.stack)
+        
+        # Initialize navigation
+        self.update_navigation()
         
         # Add widgets to main layout
         main_layout.addWidget(sidebar)
@@ -529,15 +535,106 @@ class OopsieDaisyMainWindow(QMainWindow):
         
         self.setStyleSheet(modern_style)
         
-    def open_recovery_wizard(self):
-        """Open the professional recovery wizard."""
-        if hasattr(self, 'recovery_wizard') and self.recovery_wizard.isVisible():
-            self.recovery_wizard.raise_()
-            self.recovery_wizard.activateWindow()
+    def update_navigation(self):
+        """Update navigation button states."""
+        step_names = [
+            "Step 1 of 4: Select Drive",
+            "Step 2 of 4: Choose Scan Mode",
+            "Step 3 of 4: Scanning...",
+            "Step 4 of 4: Recovery Results"
+        ]
+        
+        self.step_indicator.setText(step_names[self.current_step])
+        
+        self.back_btn.setEnabled(self.current_step > 0 and self.current_step != 2)
+        
+        if self.current_step == 0:
+            self.next_btn.setText("Next ➡️")
+            self.next_btn.setEnabled(self.drive_widget.get_selected_drive() is not None)
+        elif self.current_step == 1:
+            self.next_btn.setText("Start Scan 🚀")
+            self.next_btn.setEnabled(True)
+        elif self.current_step == 2:
+            self.next_btn.setText("Scanning...")
+            self.next_btn.setEnabled(False)
+        elif self.current_step == 3:
+            self.next_btn.setText("New Scan 🔄")
+            self.next_btn.setEnabled(True)
+    
+    def go_back(self):
+        """Go to previous step."""
+        if self.current_step > 0:
+            self.current_step -= 1
+            self.stack.setCurrentIndex(self.current_step)
+            self.update_navigation()
+    
+    def go_next(self):
+        """Go to next step."""
+        if self.current_step == 0:
+            # Drive selection -> Scan mode
+            self.current_step = 1
+            self.stack.setCurrentIndex(self.current_step)
+        elif self.current_step == 1:
+            # Scan mode -> Start scan
+            self.start_scan()
+            self.current_step = 2
+            self.stack.setCurrentIndex(self.current_step)
+        elif self.current_step == 3:
+            # Results -> Start over
+            self.current_step = 0
+            self.stack.setCurrentIndex(self.current_step)
+        
+        self.update_navigation()
+    
+    def start_scan(self):
+        """Start the recovery scan."""
+        drive_info = self.drive_widget.get_selected_drive()
+        scan_mode = self.mode_widget.get_selected_mode()
+        
+        if not drive_info:
             return
         
-        self.recovery_wizard = RecoveryWizard()
-        self.recovery_wizard.show()
+        print(f"Starting {scan_mode.value} scan of {drive_info['device']}")
+        
+        # Update progress widget
+        self.progress_widget.start_scan()
+        
+        # Start recovery thread
+        self.recovery_thread = RecoveryWizardThread(self.engine, drive_info, scan_mode)
+        self.recovery_thread.progress_updated.connect(self.progress_widget.update_progress)
+        self.recovery_thread.files_found.connect(self.on_scan_completed)
+        self.recovery_thread.error_occurred.connect(self.on_scan_error)
+        self.recovery_thread.start()
+    
+    def cancel_scan(self):
+        """Cancel the current scan."""
+        if self.recovery_thread and self.recovery_thread.isRunning():
+            self.recovery_thread.stop()
+            self.recovery_thread.wait()
+        
+        self.progress_widget.stop_scan()
+        self.current_step = 1
+        self.stack.setCurrentIndex(self.current_step)
+        self.update_navigation()
+    
+    def on_scan_completed(self, files):
+        """Handle scan completion."""
+        self.progress_widget.stop_scan()
+        self.results_widget.set_results(files)
+        self.current_step = 3
+        self.stack.setCurrentIndex(self.current_step)
+        self.update_navigation()
+        
+        print(f"Scan completed! Found {len(files)} recoverable files.")
+    
+    def on_scan_error(self, error):
+        """Handle scan error."""
+        self.progress_widget.stop_scan()
+        print(f"Scan error: {error}")
+        # Show error dialog
+        self.current_step = 1
+        self.stack.setCurrentIndex(self.current_step)
+        self.update_navigation()
 
 
 def run_app():
