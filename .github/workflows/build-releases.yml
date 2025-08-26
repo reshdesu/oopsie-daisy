@@ -1,0 +1,151 @@
+name: Build and Release Executables
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers on version tags like v1.0.0
+  workflow_dispatch:  # Allows manual triggering
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+    
+    - name: Install uv
+      run: pip install uv
+    
+    - name: Install dependencies
+      run: uv sync --extra test
+    
+    - name: Install PyInstaller
+      run: uv pip install pyinstaller
+    
+    - name: Build Windows executable
+      run: |
+        uv run python -m PyInstaller --clean --onefile --windowed --name "OopsieDaisy" --add-data "src/oopsie_daisy/styles.py;oopsie_daisy" --hidden-import "PySide6.QtCore" --hidden-import "PySide6.QtGui" --hidden-import "PySide6.QtWidgets" --hidden-import "send2trash" src/oopsie_daisy/__init__.py
+    
+    - name: Upload Windows artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: oopsie-daisy-windows
+        path: dist/OopsieDaisy.exe
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+    
+    - name: Install uv
+      run: pip install uv
+    
+    - name: Install dependencies
+      run: uv sync --extra test
+    
+    - name: Install PyInstaller
+      run: uv pip install pyinstaller
+    
+    - name: Build macOS executable
+      run: |
+        uv run python -m PyInstaller --clean --onefile --windowed --name "OopsieDaisy" --add-data "src/oopsie_daisy/styles.py:oopsie_daisy" --hidden-import "PySide6.QtCore" --hidden-import "PySide6.QtGui" --hidden-import "PySide6.QtWidgets" --hidden-import "send2trash" src/oopsie_daisy/__init__.py
+    
+    - name: Upload macOS artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: oopsie-daisy-macos
+        path: dist/OopsieDaisy
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libxcb-cursor0 libxcb-cursor-dev libgl1-mesa-glx libegl1-mesa libxrandr2 libxrandr2 libxss1 libxcursor1 libxcomposite1 libasound2 libxi6 libxtst6
+    
+    - name: Install uv
+      run: pip install uv
+    
+    - name: Install dependencies
+      run: uv sync --extra test
+    
+    - name: Install PyInstaller
+      run: uv pip install pyinstaller
+    
+    - name: Build Linux executable
+      run: |
+        uv run python -m PyInstaller --clean --onefile --windowed --name "OopsieDaisy" --add-data "src/oopsie_daisy/styles.py:oopsie_daisy" --hidden-import "PySide6.QtCore" --hidden-import "PySide6.QtGui" --hidden-import "PySide6.QtWidgets" --hidden-import "send2trash" src/oopsie_daisy/__init__.py
+    
+    - name: Upload Linux artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: oopsie-daisy-linux
+        path: dist/OopsieDaisy
+
+  create-release:
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        name: "Oopsie Daisy ${{ github.ref_name }}"
+        body: |
+          🐱 **Oopsie Daisy File Recovery Tool**
+          
+          A cute kitten-themed file recovery application with beautiful twinkling starry sky!
+          
+          ## Downloads
+          - **Windows**: Download `OopsieDaisy.exe` - Just double-click to run!
+          - **macOS**: Download `OopsieDaisy` - You may need to allow it in Security settings
+          - **Linux**: Download `OopsieDaisy` - Make executable with `chmod +x OopsieDaisy`
+          
+          ## Features
+          - 🔍 Easy one-click scanning for deleted files
+          - 💖 Beautiful kitten-themed interface with pink colors
+          - 🌌 Realistic twinkling stars covering the entire app
+          - 🛡️ Safe, non-destructive file recovery
+          - 📁 Restore multiple files at once
+          
+          ## First Time Users
+          1. Download the file for your operating system
+          2. Double-click to run (Windows) or follow instructions above
+          3. Click "Start Scan" to find your deleted files
+          4. Select files and click "Restore Files"
+          5. Choose where to save them - done! 🎉
+          
+          **Made with 💖 by reshdesu and virtual kittens**
+        files: |
+          artifacts/oopsie-daisy-windows/OopsieDaisy.exe
+          artifacts/oopsie-daisy-macos/OopsieDaisy
+          artifacts/oopsie-daisy-linux/OopsieDaisy
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
