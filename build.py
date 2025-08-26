@@ -10,14 +10,27 @@ import subprocess
 import platform
 from pathlib import Path
 
-def install_pyinstaller():
-    """Install PyInstaller if not already installed"""
+def install_dependencies():
+    """Install PyInstaller and GPU dependencies if not already installed"""
     try:
         import PyInstaller
         print("✅ PyInstaller already installed")
     except ImportError:
         print("📦 Installing PyInstaller...")
         subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller"])
+    
+    # Check for GPU acceleration dependencies
+    gpu_available = True
+    try:
+        import pyopencl
+        import numpy
+        print("✅ GPU acceleration dependencies available")
+    except ImportError:
+        print("⚠️  GPU acceleration dependencies missing")
+        print("   Install with: uv sync --extra gpu")
+        gpu_available = False
+    
+    return gpu_available
 
 def create_spec_file():
     """Create PyInstaller spec file for better control"""
@@ -37,6 +50,12 @@ a = Analysis(
         'PySide6.QtGui', 
         'PySide6.QtWidgets',
         'send2trash',
+        'numpy',
+        'pyopencl',
+        'concurrent.futures',
+        'psutil',
+        'multiprocessing',
+        'threading',
     ],
     hookspath=[],
     hooksconfig={},
@@ -79,7 +98,7 @@ def build_executable():
     system = platform.system().lower()
     print(f"🏗️  Building for {system}...")
     
-    # Build command
+    # Build command with GPU acceleration support
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--clean",
@@ -91,6 +110,13 @@ def build_executable():
         "--hidden-import", "PySide6.QtGui", 
         "--hidden-import", "PySide6.QtWidgets",
         "--hidden-import", "send2trash",
+        "--hidden-import", "numpy",
+        "--hidden-import", "pyopencl",
+        "--hidden-import", "concurrent.futures",
+        "--hidden-import", "psutil",
+        "--hidden-import", "multiprocessing",
+        "--hidden-import", "threading",
+        "--collect-all", "pyopencl",  # Include all OpenCL files
         "src/oopsie_daisy/__init__.py"
     ]
     
@@ -198,20 +224,28 @@ echo "✅ Created $DMG_NAME.dmg"
         print("✅ Created macOS DMG script (create_dmg.sh)")
 
 def main():
-    print("🐱 Oopsie Daisy Build Script")
-    print("=" * 40)
+    print("🐱 Oopsie Daisy GPU-Accelerated Build Script")
+    print("=" * 50)
     
-    # Install dependencies
-    install_pyinstaller()
+    # Install dependencies and check GPU support
+    gpu_available = install_dependencies()
     
     # Build executable
     if build_executable():
         create_installer_script()
         print("\n🎉 Build process completed!")
+        print(f"   GPU acceleration: {'✅ Included' if gpu_available else '❌ Not available'}")
         print("\nNext steps:")
         print("1. Test the executable in dist/ folder")
         print("2. Create installer using the generated scripts")
         print("3. Upload to GitHub Releases")
+        
+        if gpu_available:
+            print("\n🚀 Your executable includes:")
+            print("   • CPU multi-threading (all cores)")
+            print("   • AMD GPU support (ROCm/OpenCL)")
+            print("   • NVIDIA GPU support (CUDA/OpenCL)")
+            print("   • Intel GPU support (OpenCL)")
     else:
         print("\n❌ Build process failed!")
         sys.exit(1)

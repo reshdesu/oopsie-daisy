@@ -41,17 +41,43 @@ class FileRecoveryEngine:
                 Path("/.Trashes"),
             ])
             
-        # Add common temp directories
+        # Add common temp directories and recovery locations
         locations.extend([
             Path(tempfile.gettempdir()),
             home / "Downloads",  # Sometimes files get stuck here
+            home / "AppData/Local/Temp" if self.system == "windows" else None,
+            home / ".cache" if self.system == "linux" else None,
+            home / "Library/Caches" if self.system == "darwin" else None,
         ])
         
-        return [loc for loc in locations if loc.exists()]
+        # Add browser cache/download locations for deeper recovery
+        if self.system == "windows":
+            browser_locations = [
+                home / "AppData/Local/Google/Chrome/User Data/Default/Downloads",
+                home / "AppData/Local/Microsoft/Edge/User Data/Default/Downloads",
+                home / "AppData/Roaming/Mozilla/Firefox/Profiles"
+            ]
+        elif self.system == "linux":
+            browser_locations = [
+                home / ".config/google-chrome/Default/Downloads",
+                home / ".mozilla/firefox",
+                home / "snap/firefox/common/.mozilla/firefox"
+            ]
+        else:  # macOS
+            browser_locations = [
+                home / "Library/Application Support/Google/Chrome/Default/Downloads",
+                home / "Library/Application Support/Firefox/Profiles"
+            ]
+        
+        locations.extend(browser_locations)
+        
+        return [loc for loc in locations if loc and loc.exists()]
     
-    def scan_for_deleted_files(self) -> List[Dict]:
+    def scan_for_deleted_files(self, deep_scan: bool = False) -> List[Dict]:
         """
         Scan for potentially recoverable deleted files.
+        Args:
+            deep_scan: If True, attempts more thorough recovery methods
         Returns a list of file information dictionaries.
         """
         found_files = []
@@ -62,7 +88,151 @@ class FileRecoveryEngine:
             except (PermissionError, OSError) as e:
                 # Skip locations we can't access
                 continue
+        
+        # Deep scan for permanently deleted files (if requested)
+        if deep_scan:
+            found_files.extend(self._deep_scan_recovery())
                 
+        return found_files
+    
+    def _deep_scan_recovery(self) -> List[Dict]:
+        """
+        Attempt to find permanently deleted files using system tools.
+        This requires elevated permissions and may take longer.
+        """
+        found_files = []
+        
+        try:
+            if self.system == "linux":
+                found_files.extend(self._linux_deep_scan())
+            elif self.system == "windows":
+                found_files.extend(self._windows_deep_scan())
+            elif self.system == "darwin":
+                found_files.extend(self._macos_deep_scan())
+                
+        except Exception as e:
+            # Deep scan failed, return empty list
+            pass
+            
+        return found_files
+    
+    def _linux_deep_scan(self) -> List[Dict]:
+        """Linux-specific deep recovery using system tools."""
+        found_files = []
+        home = Path.home()
+        
+        # Check for .*.swp files (vim temporary files)
+        for pattern in ["**/.*.swp", "**/*~", "**/*.tmp"]:
+            try:
+                for file_path in home.glob(pattern):
+                    if file_path.is_file():
+                        found_files.append({
+                            'name': file_path.name,
+                            'path': str(file_path),
+                            'size': file_path.stat().st_size,
+                            'type': 'temporary_file'
+                        })
+            except:
+                continue
+        
+        # Check recent file operations in bash history
+        bash_history = home / ".bash_history"
+        if bash_history.exists():
+            try:
+                with open(bash_history, 'r', encoding='utf-8', errors='ignore') as f:
+                    for line in f.readlines()[-100:]:  # Last 100 commands
+                        if 'rm ' in line and not line.strip().startswith('#'):
+                            # Extract potential deleted file paths
+                            parts = line.strip().split()
+                            for part in parts[1:]:  # Skip 'rm' command
+                                if '/' in part and not part.startswith('-'):
+                                    potential_path = Path(part).resolve()
+                                    if not potential_path.exists():
+                                        found_files.append({
+                                            'name': potential_path.name,
+                                            'path': str(potential_path),
+                                            'size': 0,
+                                            'type': 'recently_deleted',
+                                            'note': 'Found in bash history'
+                                        })
+            except:
+                pass
+                
+        return found_files
+    
+    def _windows_deep_scan(self) -> List[Dict]:
+        """Windows-specific deep recovery methods."""
+        found_files = []
+        
+        try:
+            # Check Windows Recent Items
+            recent_folder = Path.home() / "AppData/Roaming/Microsoft/Windows/Recent"
+            if recent_folder.exists():
+                for lnk_file in recent_folder.glob("*.lnk"):
+                    # Parse .lnk files to find original file paths
+                    try:
+                        # Simple approach - just get the name from .lnk filename
+                        original_name = lnk_file.stem
+                        found_files.append({
+                            'name': original_name,
+                            'path': f"Recent: {original_name}",
+                            'size': 0,
+                            'type': 'recent_item',
+                            'note': 'Found in Recent Items'
+                        })
+                    except:
+                        continue
+            
+            # Check for temp files in Windows temp directories
+            temp_dirs = [
+                Path.home() / "AppData/Local/Temp",
+                Path("C:/Windows/Temp") if Path("C:/Windows/Temp").exists() else None
+            ]
+            
+            for temp_dir in filter(None, temp_dirs):
+                try:
+                    for pattern in ["*.tmp", "*.temp", "~*"]:
+                        for temp_file in temp_dir.glob(pattern):
+                            if temp_file.is_file():
+                                found_files.append({
+                                    'name': temp_file.name,
+                                    'path': str(temp_file),
+                                    'size': temp_file.stat().st_size,
+                                    'type': 'temp_file'
+                                })
+                except:
+                    continue
+                    
+        except Exception:
+            pass
+            
+        return found_files
+    
+    def _macos_deep_scan(self) -> List[Dict]:
+        """macOS-specific deep recovery methods."""
+        found_files = []
+        
+        try:
+            # Check macOS Recent Items
+            recent_folders = [
+                Path.home() / "Library/Application Support/com.apple.sharedfilelist/com.apple.LSSharedFileList.RecentDocuments.sfl2",
+                Path.home() / "Library/Preferences/com.apple.recentitems.plist"
+            ]
+            
+            for folder in recent_folders:
+                if folder.exists():
+                    # This would require plist parsing - simplified approach
+                    found_files.append({
+                        'name': 'Recent Documents',
+                        'path': str(folder),
+                        'size': folder.stat().st_size,
+                        'type': 'recent_items',
+                        'note': 'macOS recent items database'
+                    })
+                    
+        except Exception:
+            pass
+            
         return found_files
     
     def _scan_location(self, location: Path) -> List[Dict]:

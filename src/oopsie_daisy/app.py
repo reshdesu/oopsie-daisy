@@ -18,6 +18,7 @@ from PySide6.QtGui import QFont, QPixmap, QPalette, QColor, QBrush, QPen, QPaint
 
 from .file_recovery import FileRecoveryEngine
 from .styles import get_kitten_style
+from .accelerated_scanner import get_optimal_scanner
 
 
 class RealStarryBackground(QWidget):
@@ -212,6 +213,12 @@ class OopsieDaisyMainWindow(QMainWindow):
         self.scan_button.clicked.connect(self.start_scan)
         self.scan_button.setMinimumHeight(48)
         
+        self.folder_scan_button = QPushButton("Scan Folder")
+        self.folder_scan_button.setObjectName("folder-scan-button")
+        self.folder_scan_button.clicked.connect(self.start_folder_scan)
+        self.folder_scan_button.setMinimumHeight(48)
+        self.folder_scan_button.setToolTip("Choose a specific folder to scan for deleted files")
+        
         self.restore_button = QPushButton("Restore Files")
         self.restore_button.setObjectName("secondary-button")
         self.restore_button.clicked.connect(self.restore_selected_files)
@@ -219,6 +226,7 @@ class OopsieDaisyMainWindow(QMainWindow):
         self.restore_button.setMinimumHeight(48)
         
         sidebar_layout.addWidget(self.scan_button)
+        sidebar_layout.addWidget(self.folder_scan_button)
         sidebar_layout.addWidget(self.restore_button)
         sidebar_layout.addSpacing(24)
         
