@@ -134,6 +134,7 @@ class OopsieDaisyMainWindow(QMainWindow):
         self.engine = AdvancedRecoveryEngine()
         self.recovery_thread = None
         self.current_step = 0
+        self.found_files = []
         self.setup_ui()
         self.setup_style()
         
@@ -602,8 +603,10 @@ class OopsieDaisyMainWindow(QMainWindow):
         # Start recovery thread
         self.recovery_thread = RecoveryWizardThread(self.engine, drive_info, scan_mode)
         self.recovery_thread.progress_updated.connect(self.progress_widget.update_progress)
-        self.recovery_thread.files_found.connect(self.on_scan_completed)
+        self.recovery_thread.files_found.connect(self.on_files_found)
+        self.recovery_thread.scan_completed.connect(self.on_scan_completed)
         self.recovery_thread.error_occurred.connect(self.on_scan_error)
+        self.recovery_thread.finished.connect(self.on_thread_finished)
         self.recovery_thread.start()
     
     def cancel_scan(self):
@@ -617,15 +620,32 @@ class OopsieDaisyMainWindow(QMainWindow):
         self.stack.setCurrentIndex(self.current_step)
         self.update_navigation()
     
-    def on_scan_completed(self, files):
+    def on_files_found(self, files):
+        """Handle files found during scan."""
+        self.found_files = files
+        print(f"Files found during scan: {len(files)}")
+    
+    def on_scan_completed(self):
         """Handle scan completion."""
+        print("Scan completed signal received!")
         self.progress_widget.stop_scan()
-        self.results_widget.set_results(files)
+        
+        # Use the files found during scanning
+        if hasattr(self, 'found_files'):
+            self.results_widget.set_results(self.found_files)
+            print(f"Setting results with {len(self.found_files)} files")
+        else:
+            self.results_widget.set_results([])
+            print("No files found to display")
+        
         self.current_step = 3
         self.stack.setCurrentIndex(self.current_step)
         self.update_navigation()
-        
-        print(f"Scan completed! Found {len(files)} recoverable files.")
+        print(f"UI updated to step {self.current_step}")
+    
+    def on_thread_finished(self):
+        """Handle thread finished."""
+        print("Recovery thread finished")
     
     def on_scan_error(self, error):
         """Handle scan error."""

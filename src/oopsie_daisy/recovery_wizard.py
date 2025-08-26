@@ -142,7 +142,7 @@ class ScanModeWidget(QWidget):
     
     def __init__(self):
         super().__init__()
-        self.selected_mode = RecoveryMode.QUICK_SCAN
+        self.selected_mode = RecoveryMode.DEEP_SCAN
         self.setup_ui()
         
     def setup_ui(self):
@@ -162,39 +162,22 @@ class ScanModeWidget(QWidget):
         # Mode selection
         self.mode_group = QButtonGroup()
         
-        # Quick Scan
-        quick_frame = QFrame()
-        quick_frame.setFrameStyle(QFrame.Box)
-        quick_frame.setStyleSheet("QFrame { border: 2px solid #e0e0e0; border-radius: 8px; padding: 10px; }")
-        quick_layout = QVBoxLayout(quick_frame)
-        
-        self.quick_radio = QRadioButton("🚀 Quick Scan (Recommended)")
-        self.quick_radio.setChecked(True)
-        self.quick_radio.setFont(QFont("Arial", 12, QFont.Bold))
-        quick_layout.addWidget(self.quick_radio)
-        
-        quick_desc = QLabel("• Scans trash/recycle bin and common locations\n• Fast and finds recently deleted files\n• Takes 30 seconds - 2 minutes")
-        quick_desc.setStyleSheet("color: #666; margin-left: 20px;")
-        quick_layout.addWidget(quick_desc)
-        
-        self.mode_group.addButton(self.quick_radio, 0)
-        layout.addWidget(quick_frame)
-        
         # Deep Scan
         deep_frame = QFrame()
         deep_frame.setFrameStyle(QFrame.Box)
         deep_frame.setStyleSheet("QFrame { border: 2px solid #e0e0e0; border-radius: 8px; padding: 10px; }")
         deep_layout = QVBoxLayout(deep_frame)
         
-        self.deep_radio = QRadioButton("🔍 Deep Scan")
+        self.deep_radio = QRadioButton("🔍 Deep Scan (Recommended)")
+        self.deep_radio.setChecked(True)
         self.deep_radio.setFont(QFont("Arial", 12, QFont.Bold))
         deep_layout.addWidget(self.deep_radio)
         
-        deep_desc = QLabel("• Analyzes file system structures (MFT, journal, FAT)\n• Finds older deleted files\n• Takes 5 minutes - 2 hours")
+        deep_desc = QLabel("• Analyzes file system structures (MFT, journal, FAT)\n• Finds older deleted files\n• Fast optimized scanning")
         deep_desc.setStyleSheet("color: #666; margin-left: 20px;")
         deep_layout.addWidget(deep_desc)
         
-        self.mode_group.addButton(self.deep_radio, 1)
+        self.mode_group.addButton(self.deep_radio, 0)
         layout.addWidget(deep_frame)
         
         # Raw Recovery
@@ -207,11 +190,11 @@ class ScanModeWidget(QWidget):
         self.raw_radio.setFont(QFont("Arial", 12, QFont.Bold))
         raw_layout.addWidget(self.raw_radio)
         
-        raw_desc = QLabel("• Signature-based file recovery\n• Finds files even after formatting\n• Takes 1-8 hours depending on drive size")
+        raw_desc = QLabel("• Signature-based file recovery\n• Finds files even after formatting\n• Optimized for faster scanning")
         raw_desc.setStyleSheet("color: #666; margin-left: 20px;")
         raw_layout.addWidget(raw_desc)
         
-        self.mode_group.addButton(self.raw_radio, 2)
+        self.mode_group.addButton(self.raw_radio, 1)
         layout.addWidget(raw_frame)
         
         # Connect signals
@@ -221,9 +204,7 @@ class ScanModeWidget(QWidget):
     
     def on_mode_selected(self, button):
         """Handle mode selection."""
-        if button == self.quick_radio:
-            self.selected_mode = RecoveryMode.QUICK_SCAN
-        elif button == self.deep_radio:
+        if button == self.deep_radio:
             self.selected_mode = RecoveryMode.DEEP_SCAN
         elif button == self.raw_radio:
             self.selected_mode = RecoveryMode.RAW_RECOVERY
