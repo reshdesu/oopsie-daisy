@@ -1,0 +1,28 @@
+[project]
+name = "oopsie-daisy"
+version = "0.1.0"
+description = "A cute kitten-themed file recovery tool with pink aesthetics"
+readme = "README.md"
+authors = [
+    { name = "reshdesu", email = "mayuresh.kinare@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "pyside6>=6.6.0",
+    "send2trash>=1.8.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+    "pytest-qt>=4.2.0",
+    "pytest-mock>=3.10.0",
+    "pytest-cov>=4.0.0",
+]
+
+[project.scripts]
+oopsie-daisy = "oopsie_daisy:main"
+
+[build-system]
+requires = ["uv_build>=0.8.12,<0.9.0"]
+build-backend = "uv_build"
