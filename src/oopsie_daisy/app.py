@@ -9,16 +9,12 @@ import math
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, 
-    QPushButton, QLabel, QListWidget, QListWidgetItem, QProgressBar,
-    QMessageBox, QFrame, QScrollArea, QFileDialog, QGraphicsView,
-    QGraphicsScene, QGraphicsEllipseItem, QGraphicsOpacityEffect
+    QPushButton, QLabel
 )
 from PySide6.QtCore import Qt, QThread, QTimer, Signal, QPropertyAnimation, QEasingCurve, QRect, QPointF
 from PySide6.QtGui import QFont, QPixmap, QPalette, QColor, QBrush, QPen, QPainter
 
-from .file_recovery import FileRecoveryEngine
-from .styles import get_kitten_style
-from .accelerated_scanner import get_optimal_scanner
+from .recovery_wizard import RecoveryWizard
 
 
 class RealStarryBackground(QWidget):
@@ -129,53 +125,11 @@ class RealStarryBackground(QWidget):
             QTimer.singleShot(50, self.create_stars)
 
 
-class FileRecoveryThread(QThread):
-    progress_updated = Signal(int)
-    files_found = Signal(list)
-    finished = Signal()
-    
-    def __init__(self, recovery_engine: FileRecoveryEngine):
-        super().__init__()
-        self.recovery_engine = recovery_engine
-        
-    def run(self):
-        deleted_files = self.recovery_engine.scan_for_deleted_files()
-        self.files_found.emit(deleted_files)
-        self.finished.emit()
-
-
-class AcceleratedScanThread(QThread):
-    progress_updated = Signal(int)
-    files_found = Signal(list)
-    finished = Signal()
-    
-    def __init__(self, folder_path: str):
-        super().__init__()
-        self.folder_path = Path(folder_path)
-        self.scanner = get_optimal_scanner()
-        
-    def run(self):
-        def progress_callback(progress):
-            self.progress_updated.emit(progress)
-        
-        try:
-            deleted_files = self.scanner.scan_folder_deep(self.folder_path, progress_callback)
-            self.files_found.emit(deleted_files)
-        except Exception as e:
-            # Handle errors gracefully
-            print(f"Accelerated scan error: {e}")
-            self.files_found.emit([])
-        finally:
-            self.finished.emit()
 
 
 class OopsieDaisyMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.recovery_engine = FileRecoveryEngine()
-        self.recovery_thread: Optional[FileRecoveryThread] = None
-        self.found_files: List[dict] = []
-        
         self.setup_ui()
         self.setup_style()
         
@@ -232,66 +186,43 @@ class OopsieDaisyMainWindow(QMainWindow):
         sidebar_layout.addWidget(brand_container)
         sidebar_layout.addSpacing(32)
         
-        # Action buttons in sidebar
-        self.scan_button = QPushButton("Start Scan")
-        self.scan_button.setObjectName("primary-button")
-        self.scan_button.clicked.connect(self.start_scan)
-        self.scan_button.setMinimumHeight(48)
+        # Main recovery button
+        self.recovery_button = QPushButton("🧙‍♀️ Start File Recovery")
+        self.recovery_button.setObjectName("primary-button")
+        self.recovery_button.clicked.connect(self.open_recovery_wizard)
+        self.recovery_button.setMinimumHeight(60)
+        self.recovery_button.setToolTip("Launch professional file recovery wizard")
         
-        self.folder_scan_button = QPushButton("Scan Folder")
-        self.folder_scan_button.setObjectName("folder-scan-button")
-        self.folder_scan_button.clicked.connect(self.start_folder_scan)
-        self.folder_scan_button.setMinimumHeight(48)
-        self.folder_scan_button.setToolTip("Choose a specific folder to scan for deleted files")
-        
-        self.restore_button = QPushButton("Restore Files")
-        self.restore_button.setObjectName("secondary-button")
-        self.restore_button.clicked.connect(self.restore_selected_files)
-        self.restore_button.setEnabled(False)
-        self.restore_button.setMinimumHeight(48)
-        
-        sidebar_layout.addWidget(self.scan_button)
-        sidebar_layout.addWidget(self.folder_scan_button)
-        sidebar_layout.addWidget(self.restore_button)
+        sidebar_layout.addWidget(self.recovery_button)
         sidebar_layout.addSpacing(24)
         
-        # Stats/info section
-        self.stats_container = QWidget()
-        self.stats_container.setObjectName("stats-card")
-        stats_layout = QVBoxLayout(self.stats_container)
-        stats_layout.setContentsMargins(16, 16, 16, 16)
-        stats_layout.setSpacing(8)
+        # Features section
+        features_group = QWidget()
+        features_group.setObjectName("stats-card")
+        features_layout = QVBoxLayout(features_group)
+        features_layout.setContentsMargins(16, 16, 16, 16)
+        features_layout.setSpacing(8)
         
-        stats_title = QLabel("Scan Results")
-        stats_title.setObjectName("stats-title")
+        features_title = QLabel("Professional Features")
+        features_title.setObjectName("stats-title")
+        features_layout.addWidget(features_title)
         
-        self.files_count_label = QLabel("0 files found")
-        self.files_count_label.setObjectName("stats-value")
+        features = [
+            "🔍 Deep disk scanning",
+            "🧬 Signature-based recovery", 
+            "⚡ GPU acceleration",
+            "🖥️ Multi-core processing",
+            "📁 All file types supported",
+            "💾 Raw partition recovery"
+        ]
         
-        stats_layout.addWidget(stats_title)
-        stats_layout.addWidget(self.files_count_label)
+        for feature in features:
+            feature_label = QLabel(feature)
+            feature_label.setStyleSheet("color: rgba(255, 255, 255, 0.9); font-size: 12px; margin: 2px 0;")
+            features_layout.addWidget(feature_label)
         
-        sidebar_layout.addWidget(self.stats_container)
+        sidebar_layout.addWidget(features_group)
         sidebar_layout.addStretch()
-        
-        # Progress section at bottom of sidebar
-        self.progress_container = QWidget()
-        progress_layout = QVBoxLayout(self.progress_container)
-        progress_layout.setContentsMargins(0, 16, 0, 0)
-        progress_layout.setSpacing(8)
-        
-        self.progress_label = QLabel("Ready to scan")
-        self.progress_label.setObjectName("progress-text")
-        self.progress_label.setAlignment(Qt.AlignCenter)
-        
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setVisible(False)
-        self.progress_bar.setObjectName("progress-bar")
-        
-        progress_layout.addWidget(self.progress_label)
-        progress_layout.addWidget(self.progress_bar)
-        
-        sidebar_layout.addWidget(self.progress_container)
         
         # Main content area
         content_widget = QWidget()
@@ -301,29 +232,45 @@ class OopsieDaisyMainWindow(QMainWindow):
         content_layout.setContentsMargins(40, 40, 40, 40)
         content_layout.setSpacing(24)
         
-        # Header
-        header_widget = QWidget()
-        header_layout = QHBoxLayout(header_widget)
-        header_layout.setContentsMargins(0, 0, 0, 0)
+        # Welcome content
+        welcome_widget = QWidget()
+        welcome_layout = QVBoxLayout(welcome_widget)
+        welcome_layout.setAlignment(Qt.AlignCenter)
+        welcome_layout.setSpacing(30)
         
-        content_title = QLabel("Deleted Files")
-        content_title.setObjectName("content-title")
+        # Large icon
+        icon_label = QLabel("🔮")
+        icon_label.setStyleSheet("font-size: 120px;")
+        icon_label.setAlignment(Qt.AlignCenter)
+        welcome_layout.addWidget(icon_label)
         
-        self.status_label = QLabel("Click 'Start Scan' to begin searching for deleted files")
-        self.status_label.setObjectName("status-text")
+        # Title
+        title_label = QLabel("Professional File Recovery")
+        title_label.setObjectName("content-title")
+        title_label.setAlignment(Qt.AlignCenter)
+        welcome_layout.addWidget(title_label)
         
-        header_layout.addWidget(content_title)
-        header_layout.addStretch()
-        header_layout.addWidget(self.status_label)
+        # Description
+        desc_text = """
+        <div style='text-align: center; color: rgba(255,255,255,0.8); font-size: 16px; line-height: 1.6;'>
+        <p><b>Recover your lost files like a pro!</b></p>
+        <p>Our advanced recovery wizard uses professional-grade techniques:</p>
+        <br>
+        <p>• <b>Deep Disk Scanning</b> - Analyzes file system structures</p>
+        <p>• <b>Signature Recovery</b> - Finds files even after formatting</p>
+        <p>• <b>GPU Acceleration</b> - Lightning-fast scanning with your graphics card</p>
+        <p>• <b>Multi-format Support</b> - Documents, images, videos, and more</p>
+        <br>
+        <p>Click the recovery button to get started! 🚀</p>
+        </div>
+        """
         
-        content_layout.addWidget(header_widget)
+        desc_label = QLabel(desc_text)
+        desc_label.setWordWrap(True)
+        desc_label.setMaximumWidth(600)
+        welcome_layout.addWidget(desc_label)
         
-        # Files table/list
-        self.files_list = QListWidget()
-        self.files_list.setObjectName("files-list")
-        self.files_list.setMinimumHeight(400)
-        
-        content_layout.addWidget(self.files_list)
+        content_layout.addWidget(welcome_widget)
         
         # Add widgets to main layout
         main_layout.addWidget(sidebar)
@@ -484,6 +431,26 @@ class OopsieDaisyMainWindow(QMainWindow):
             background: #357ABD;
         }
         
+        QPushButton[objectName=\"advanced-button\"] {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #8E44AD, stop:1 #6C3483);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+            padding: 12px 24px;
+        }
+        
+        QPushButton[objectName=\"advanced-button\"]:hover {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 #9B59B6, stop:1 #8E44AD);
+        }
+        
+        QPushButton[objectName=\"advanced-button\"]:pressed {
+            background: #6C3483;
+        }
+        
         /* Stats card */
         QWidget[objectName="stats-card"] {
             background: rgba(255, 255, 255, 0.1);
@@ -562,155 +529,15 @@ class OopsieDaisyMainWindow(QMainWindow):
         
         self.setStyleSheet(modern_style)
         
-    def start_scan(self):
-        if self.recovery_thread and self.recovery_thread.isRunning():
+    def open_recovery_wizard(self):
+        """Open the professional recovery wizard."""
+        if hasattr(self, 'recovery_wizard') and self.recovery_wizard.isVisible():
+            self.recovery_wizard.raise_()
+            self.recovery_wizard.activateWindow()
             return
-            
-        self.progress_bar.setVisible(True)
-        self.progress_bar.setRange(0, 0)  # Indeterminate progress
-        self.progress_label.setText("Scanning for deleted files...")
-        self.status_label.setText("Scanning in progress")
-        self.scan_button.setEnabled(False)
-        self.folder_scan_button.setEnabled(False)
-        self.files_list.clear()
         
-        self.recovery_thread = FileRecoveryThread(self.recovery_engine)
-        self.recovery_thread.files_found.connect(self.on_files_found)
-        self.recovery_thread.finished.connect(self.on_scan_finished)
-        self.recovery_thread.start()
-    
-    def start_folder_scan(self):
-        """Start scanning a specific folder chosen by user."""
-        if self.recovery_thread and self.recovery_thread.isRunning():
-            return
-            
-        # Ask user to select folder
-        folder_path = QFileDialog.getExistingDirectory(
-            self,
-            "🔍 Choose folder to scan for deleted files",
-            str(Path.home())
-        )
-        
-        if not folder_path:
-            return
-            
-        self.progress_bar.setVisible(True)
-        self.progress_bar.setRange(0, 100)  # Determinate progress for folder scan
-        self.progress_label.setText(f"Deep scanning: {Path(folder_path).name}...")
-        self.status_label.setText("Deep folder scan in progress")
-        self.scan_button.setEnabled(False)
-        self.folder_scan_button.setEnabled(False)
-        self.files_list.clear()
-        
-        # Use accelerated scanner for folder scan
-        self.recovery_thread = AcceleratedScanThread(folder_path)
-        self.recovery_thread.progress_updated.connect(self.progress_bar.setValue)
-        self.recovery_thread.files_found.connect(self.on_files_found)
-        self.recovery_thread.finished.connect(self.on_scan_finished)
-        self.recovery_thread.start()
-        
-    def on_files_found(self, files: List[dict]):
-        self.found_files = files
-        self.files_list.clear()
-        
-        for file_info in files:
-            item_text = f"📄 {file_info['name']} ({file_info['size']} bytes)"
-            if 'date_deleted' in file_info:
-                item_text += f" - Deleted: {file_info['date_deleted']}"
-            
-            item = QListWidgetItem(item_text)
-            item.setData(Qt.UserRole, file_info)
-            self.files_list.addItem(item)
-            
-    def on_scan_finished(self):
-        self.progress_bar.setVisible(False)
-        self.scan_button.setEnabled(True)
-        self.folder_scan_button.setEnabled(True)
-        
-        file_count = len(self.found_files)
-        self.files_count_label.setText(f"{file_count} files found")
-        
-        if self.found_files:
-            self.progress_label.setText("Scan completed")
-            self.status_label.setText("Select files to restore")
-            self.restore_button.setEnabled(True)
-        else:
-            self.progress_label.setText("No files found")
-            self.status_label.setText("No deleted files found in scanned locations")
-            
-    def restore_selected_files(self):
-        selected_items = self.files_list.selectedItems()
-        
-        if not selected_items:
-            QMessageBox.information(
-                self, 
-                "🐱 Oopsie Daisy - No Files Selected", 
-                "Oops! You need to select at least one file first! 💕\n\n"
-                "📋 How to select files:\n"
-                "  • Click once on a file to select it\n"
-                "  • Hold Ctrl (or Cmd on Mac) and click to select multiple files\n"
-                "  • Hold Shift and click to select a range of files\n\n"
-                "Then come back and click this button again! 🐾"
-            )
-            return
-            
-        # Ask user where to restore files with helpful dialog
-        restore_dir = QFileDialog.getExistingDirectory(
-            self,
-            f"🏠 Choose where to save your {len(selected_items)} recovered file{'s' if len(selected_items) != 1 else ''} - Recommended: Desktop or Documents",
-            str(Path.home() / "Desktop")
-        )
-        
-        if not restore_dir:
-            return
-            
-        restored_count = 0
-        for item in selected_items:
-            file_info = item.data(Qt.UserRole)
-            try:
-                success = self.recovery_engine.restore_file(file_info, restore_dir)
-                if success:
-                    restored_count += 1
-            except Exception as e:
-                QMessageBox.warning(
-                    self,
-                    "🙀 Oops! Restore Problem",
-                    f"We had trouble restoring '{file_info['name']}' 😿\n\n"
-                    f"Error details: {str(e)}\n\n"
-                    f"💡 This might help:\n"
-                    f"  • Try choosing a different folder (like Desktop)\n"
-                    f"  • Make sure the folder isn't read-only\n"
-                    f"  • Close any programs that might be using this file\n\n"
-                    f"Don't worry - your original file is still safe! 🐾"
-                )
-                
-        if restored_count > 0:
-            QMessageBox.information(
-                self,
-                "🎉 Mission Accomplished!",
-                f"Hooray! Successfully restored {restored_count} file{'s' if restored_count != 1 else ''} to:\n"
-                f"📂 {restore_dir}\n\n"
-                f"🎯 What to do now:\n"
-                f"  • Open the folder above to see your recovered files\n"
-                f"  • Your files are now safe and sound! 🛡️\n"
-                f"  • Consider backing them up to prevent future scares\n\n"
-                f"You're all set! Our virtual kittens are purring with pride! 🐱💕"
-            )
-        else:
-            QMessageBox.warning(
-                self,
-                "😿 Restore Challenge",
-                "We weren't able to restore any files this time. 😔\n\n"
-                "🤔 This might mean:\n"
-                "  • The files were permanently deleted\n"
-                "  • They're corrupted or no longer accessible\n"
-                "  • Permission issues with the chosen folder\n\n"
-                "💡 You could try:\n"
-                "  • Running the scan again (sometimes files appear later)\n"
-                "  • Checking your Trash/Recycle Bin manually\n"
-                "  • Using a different recovery tool for deeper scanning\n\n"
-                "Don't give up - there might still be hope! 🌟"
-            )
+        self.recovery_wizard = RecoveryWizard()
+        self.recovery_wizard.show()
 
 
 def run_app():
