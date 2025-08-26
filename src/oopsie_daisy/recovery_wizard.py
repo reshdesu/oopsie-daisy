@@ -17,6 +17,7 @@ from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from PySide6.QtGui import QPixmap, QIcon, QFont, QPainter, QColor
 
 from .advanced_recovery import AdvancedRecoveryEngine, RecoveryMode, RecoveredFile
+from .hardware_monitor import ScanHardwareMonitor
 
 
 class RecoveryWizardThread(QThread):
@@ -219,6 +220,7 @@ class ScanProgressWidget(QWidget):
     
     def __init__(self):
         super().__init__()
+        self.hardware_monitor = ScanHardwareMonitor()
         self.setup_ui()
         
     def setup_ui(self):
@@ -260,6 +262,34 @@ class ScanProgressWidget(QWidget):
         
         layout.addWidget(stats_group)
         
+        # Hardware monitoring section
+        hardware_group = QGroupBox("🖥️ Hardware Performance")
+        hardware_layout = QGridLayout(hardware_group)
+        
+        # CPU monitoring
+        self.cpu_usage_label = QLabel("CPU: 0%")
+        self.cpu_temp_label = QLabel("0°C")
+        
+        # GPU monitoring  
+        self.gpu_usage_label = QLabel("GPU: 0%")
+        self.gpu_temp_label = QLabel("0°C")
+        
+        # Memory monitoring
+        self.memory_usage_label = QLabel("RAM: 0%")
+        
+        hardware_layout.addWidget(QLabel("🔧"), 0, 0)
+        hardware_layout.addWidget(self.cpu_usage_label, 0, 1)
+        hardware_layout.addWidget(self.cpu_temp_label, 0, 2)
+        
+        hardware_layout.addWidget(QLabel("🎮"), 1, 0)  
+        hardware_layout.addWidget(self.gpu_usage_label, 1, 1)
+        hardware_layout.addWidget(self.gpu_temp_label, 1, 2)
+        
+        hardware_layout.addWidget(QLabel("💾"), 2, 0)
+        hardware_layout.addWidget(self.memory_usage_label, 2, 1)
+        
+        layout.addWidget(hardware_group)
+        
         # Cancel button
         self.cancel_button = QPushButton("❌ Cancel Scan")
         self.cancel_button.setStyleSheet("QPushButton { background: #ff6b6b; color: white; }")
@@ -273,14 +303,18 @@ class ScanProgressWidget(QWidget):
         self.timer.timeout.connect(self.update_elapsed_time)
         
     def start_scan(self):
-        """Start the scan timer."""
+        """Start the scan timer and hardware monitoring."""
         import time
         self.start_time = time.time()
         self.timer.start(1000)  # Update every second
         
+        # Start hardware monitoring
+        self.hardware_monitor.start_scan_monitoring(self.update_hardware_display)
+        
     def stop_scan(self):
-        """Stop the scan timer."""
+        """Stop the scan timer and hardware monitoring."""
         self.timer.stop()
+        self.hardware_monitor.stop_monitoring()
         
     def update_progress(self, progress: int, status: str):
         """Update progress display."""
@@ -300,6 +334,47 @@ class ScanProgressWidget(QWidget):
             minutes = elapsed // 60
             seconds = elapsed % 60
             self.elapsed_label.setText(f"Elapsed: {minutes}:{seconds:02d}")
+    
+    def update_hardware_display(self, stats):
+        """Update hardware monitoring display."""
+        try:
+            # Update CPU stats
+            cpu_percent = stats.get('cpu_percent', 0.0)
+            cpu_temp = stats.get('cpu_temp', 0.0)
+            self.cpu_usage_label.setText(f"CPU: {cpu_percent:.1f}%")
+            
+            if cpu_temp > 0:
+                temp_color = self._get_temp_color(cpu_temp, 70, 85)  # CPU temp thresholds
+                self.cpu_temp_label.setText(f"<span style='color: {temp_color}'>{cpu_temp:.1f}°C</span>")
+            else:
+                self.cpu_temp_label.setText("N/A")
+            
+            # Update GPU stats
+            gpu_percent = stats.get('gpu_percent', 0.0)
+            gpu_temp = stats.get('gpu_temp', 0.0)
+            self.gpu_usage_label.setText(f"GPU: {gpu_percent:.1f}%")
+            
+            if gpu_temp > 0:
+                temp_color = self._get_temp_color(gpu_temp, 75, 90)  # GPU temp thresholds
+                self.gpu_temp_label.setText(f"<span style='color: {temp_color}'>{gpu_temp:.1f}°C</span>")
+            else:
+                self.gpu_temp_label.setText("N/A")
+            
+            # Update memory stats
+            memory_percent = stats.get('memory_percent', 0.0)
+            self.memory_usage_label.setText(f"RAM: {memory_percent:.1f}%")
+            
+        except Exception as e:
+            print(f"Hardware display update error: {e}")
+    
+    def _get_temp_color(self, temp, warning_threshold, critical_threshold):
+        """Get color based on temperature thresholds."""
+        if temp >= critical_threshold:
+            return "#ff4444"  # Red for critical
+        elif temp >= warning_threshold:
+            return "#ffaa00"  # Orange for warning
+        else:
+            return "#44ff44"  # Green for normal
 
 
 class ResultsWidget(QWidget):
