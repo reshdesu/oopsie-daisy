@@ -460,13 +460,77 @@ class FilePreviewDialog(QDialog):
     
     def recover_single_file(self):
         """Recover just this single file."""
-        # Ask user for output directory
-        output_dir = QFileDialog.getExistingDirectory(
+        # Create default recovery directory name with timestamp
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        default_folder_name = f"oopsie-daisy-recovery_{timestamp}"
+        
+        # Try to use Downloads folder first, fall back gracefully
+        possible_base_paths = [
+            Path.home() / "Downloads",
+            Path.home() / "Desktop", 
+            Path.home() / "Documents",
+            Path.home()  # Final fallback
+        ]
+        
+        default_base_path = None
+        for base_path in possible_base_paths:
+            if base_path.exists() and base_path.is_dir():
+                default_base_path = base_path
+                break
+                
+        if not default_base_path:
+            # Create Downloads folder if none of the standard folders exist
+            default_base_path = Path.home() / "Downloads"
+            try:
+                default_base_path.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                default_base_path = Path.home()  # Ultimate fallback to home
+        
+        default_recovery_path = default_base_path / default_folder_name
+        
+        # Ask user if they want to use default location or choose custom
+        reply = QMessageBox.question(
             self, 
-            "Select Recovery Directory",
-            str(Path.home() / "Desktop"),
-            QFileDialog.ShowDirsOnly
+            "📁 Choose Recovery Location",
+            f"Where would you like to save '{self.file_info.name}'?\n\n"
+            f"🎯 Recommended (Default):\n{default_recovery_path}\n\n"
+            f"This creates an organized folder with timestamp so you can easily find your file later.\n\n"
+            f"Choose 'Yes' for recommended location, or 'No' to select a custom directory.",
+            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+            QMessageBox.Yes
         )
+        
+        if reply == QMessageBox.Cancel:
+            return
+        elif reply == QMessageBox.Yes:
+            # Use default location
+            output_dir = str(default_recovery_path)
+            # Create the directory
+            try:
+                default_recovery_path.mkdir(parents=True, exist_ok=True)
+                QMessageBox.information(
+                    self,
+                    "📂 Recovery Folder Created", 
+                    f"Recovery folder created:\n{output_dir}\n\nYour file will be recovered to this organized location!"
+                )
+            except Exception as e:
+                QMessageBox.warning(
+                    self,
+                    "⚠️ Folder Creation Failed",
+                    f"Could not create default folder:\n{e}\n\nPlease choose a custom location."
+                )
+                # Fall back to custom selection
+                reply = QMessageBox.No
+        
+        if reply == QMessageBox.No:
+            # Let user choose custom directory
+            output_dir = QFileDialog.getExistingDirectory(
+                self, 
+                "🗂️ Select Custom Recovery Directory",
+                str(default_base_path),
+                QFileDialog.ShowDirsOnly
+            )
         
         if not output_dir:
             return  # User cancelled
@@ -1236,14 +1300,78 @@ class ResultsWidget(QWidget):
         if not selected:
             QMessageBox.warning(self, "No Files Selected", "Please select files to recover first.")
             return
-            
-        # Ask user for output directory
-        output_dir = QFileDialog.getExistingDirectory(
+        
+        # Create default recovery directory name with timestamp
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        default_folder_name = f"oopsie-daisy-recovery_{timestamp}"
+        
+        # Try to use Downloads folder first, fall back gracefully
+        possible_base_paths = [
+            Path.home() / "Downloads",
+            Path.home() / "Desktop", 
+            Path.home() / "Documents",
+            Path.home()  # Final fallback
+        ]
+        
+        default_base_path = None
+        for base_path in possible_base_paths:
+            if base_path.exists() and base_path.is_dir():
+                default_base_path = base_path
+                break
+                
+        if not default_base_path:
+            # Create Downloads folder if none of the standard folders exist
+            default_base_path = Path.home() / "Downloads"
+            try:
+                default_base_path.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                default_base_path = Path.home()  # Ultimate fallback to home
+        
+        default_recovery_path = default_base_path / default_folder_name
+        
+        # Ask user if they want to use default location or choose custom
+        reply = QMessageBox.question(
             self, 
-            "Select Recovery Directory",
-            str(Path.home() / "Desktop"),
-            QFileDialog.ShowDirsOnly
+            "📁 Choose Recovery Location",
+            f"Where would you like to save the recovered files?\n\n"
+            f"🎯 Recommended (Default):\n{default_recovery_path}\n\n"
+            f"This creates an organized folder with timestamp so you can easily find your files later.\n\n"
+            f"Choose 'Yes' for recommended location, or 'No' to select a custom directory.",
+            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+            QMessageBox.Yes
         )
+        
+        if reply == QMessageBox.Cancel:
+            return
+        elif reply == QMessageBox.Yes:
+            # Use default location
+            output_dir = str(default_recovery_path)
+            # Create the directory
+            try:
+                default_recovery_path.mkdir(parents=True, exist_ok=True)
+                QMessageBox.information(
+                    self,
+                    "📂 Recovery Folder Created", 
+                    f"Recovery folder created:\n{output_dir}\n\nYour files will be recovered to this organized location!"
+                )
+            except Exception as e:
+                QMessageBox.warning(
+                    self,
+                    "⚠️ Folder Creation Failed",
+                    f"Could not create default folder:\n{e}\n\nPlease choose a custom location."
+                )
+                # Fall back to custom selection
+                reply = QMessageBox.No
+        
+        if reply == QMessageBox.No:
+            # Let user choose custom directory
+            output_dir = QFileDialog.getExistingDirectory(
+                self, 
+                "🗂️ Select Custom Recovery Directory",
+                str(default_base_path),
+                QFileDialog.ShowDirsOnly
+            )
         
         if not output_dir:
             return  # User cancelled

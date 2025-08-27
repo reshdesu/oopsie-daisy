@@ -31,7 +31,7 @@ jobs:
     
     - name: Build Windows executable
       run: |
-        uv run python -m PyInstaller --clean --onefile --windowed --name "OopsieDaisy" --add-data "src/oopsie_daisy/styles.py;oopsie_daisy" --hidden-import "PySide6.QtCore" --hidden-import "PySide6.QtGui" --hidden-import "PySide6.QtWidgets" --hidden-import "send2trash" --hidden-import "numpy" --hidden-import "pyopencl" --hidden-import "concurrent.futures" --hidden-import "psutil" --collect-all "pyopencl" src/oopsie_daisy/__init__.py
+        uv run python -m PyInstaller --clean --onefile --windowed --name "OopsieDaisy" --hidden-import "PySide6.QtCore" --hidden-import "PySide6.QtGui" --hidden-import "PySide6.QtWidgets" --hidden-import "send2trash" --hidden-import "numpy" --hidden-import "pyopencl" --hidden-import "concurrent.futures" --hidden-import "psutil" --collect-all "pyopencl" src/oopsie_daisy/__init__.py
     
     - name: Upload Windows artifact
       uses: actions/upload-artifact@v4
@@ -60,7 +60,7 @@ jobs:
     
     - name: Build macOS executable
       run: |
-        uv run python -m PyInstaller --clean --onefile --windowed --name "OopsieDaisy-macOS" --add-data "src/oopsie_daisy/styles.py:oopsie_daisy" --hidden-import "PySide6.QtCore" --hidden-import "PySide6.QtGui" --hidden-import "PySide6.QtWidgets" --hidden-import "send2trash" --hidden-import "numpy" --hidden-import "pyopencl" --hidden-import "concurrent.futures" --hidden-import "psutil" --collect-all "pyopencl" src/oopsie_daisy/__init__.py
+        uv run python -m PyInstaller --clean --onefile --windowed --name "OopsieDaisy-macOS" --hidden-import "PySide6.QtCore" --hidden-import "PySide6.QtGui" --hidden-import "PySide6.QtWidgets" --hidden-import "send2trash" --hidden-import "numpy" --hidden-import "pyopencl" --hidden-import "concurrent.futures" --hidden-import "psutil" --collect-all "pyopencl" src/oopsie_daisy/__init__.py
     
     - name: Upload macOS artifact
       uses: actions/upload-artifact@v4
@@ -94,7 +94,7 @@ jobs:
     
     - name: Build Linux executable
       run: |
-        uv run python -m PyInstaller --clean --onefile --windowed --name "OopsieDaisy-Linux" --add-data "src/oopsie_daisy/styles.py:oopsie_daisy" --hidden-import "PySide6.QtCore" --hidden-import "PySide6.QtGui" --hidden-import "PySide6.QtWidgets" --hidden-import "send2trash" --hidden-import "numpy" --hidden-import "pyopencl" --hidden-import "concurrent.futures" --hidden-import "psutil" --collect-all "pyopencl" src/oopsie_daisy/__init__.py
+        uv run python -m PyInstaller --clean --onefile --windowed --name "OopsieDaisy-Linux" --hidden-import "PySide6.QtCore" --hidden-import "PySide6.QtGui" --hidden-import "PySide6.QtWidgets" --hidden-import "send2trash" --hidden-import "numpy" --hidden-import "pyopencl" --hidden-import "concurrent.futures" --hidden-import "psutil" --collect-all "pyopencl" src/oopsie_daisy/__init__.py
     
     - name: Upload Linux artifact
       uses: actions/upload-artifact@v4
