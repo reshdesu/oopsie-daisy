@@ -251,10 +251,52 @@ export QT_QPA_PLATFORM=xcb
 uv run oopsie-daisy
 ```
 
-#### **Permission Errors**
-- **Windows**: Run as Administrator
-- **macOS**: Allow system access in Security & Privacy
-- **Linux**: Ensure user has disk access permissions
+#### **Windows SmartScreen Warning** 🛡️
+Windows 11 shows "Windows protected your PC" for unsigned executables:
+
+**Why this happens:**
+- **Code Signing Costs**: Professional code signing certificates cost $200-400/year
+- **Microsoft's Protection**: Windows blocks unknown publishers by default
+- **Open Source Reality**: Small projects can't always afford expensive certificates
+- **Your Safety**: The warning doesn't mean malware - just "unknown publisher"
+
+**How to bypass (100% safe):**
+
+**Method 1: Click through the warning**
+1. Click "More info" in the warning dialog
+2. Click "Run anyway"
+
+**Method 2: Unblock the file**
+1. Right-click `OopsieDaisy.exe` → Properties
+2. Check "Unblock" at the bottom → OK
+3. Double-click to run
+
+✅ **Trust verification**: All our code is open source on GitHub - you can verify it's safe!
+
+#### **Administrator Access Required** 🔐
+Some file recovery operations need elevated permissions:
+
+**Why admin access is needed:**
+- **Deep Disk Access**: Reading deleted files from unallocated disk space
+- **System Drive Scanning**: Accessing system areas where deleted files might be
+- **Hardware Monitoring**: Querying CPU/GPU temperatures requires system-level access
+- **File Recovery**: Writing recovered files to system-protected folders
+
+**When you'll see this:**
+- Scanning system drives (C:\ on Windows)
+- Deep recovery mode (searches deleted file signatures)
+- Hardware temperature monitoring
+- Recovering to system folders
+
+**Your data safety:**
+- ✅ **Read-only scanning**: We never modify your existing files
+- ✅ **Recovery only**: We only create new copies of deleted files
+- ✅ **No system changes**: We don't install services or modify registry
+- ✅ **Local processing**: Everything happens on your computer, no internet required
+
+#### **Other Permission Errors**
+- **macOS**: Allow system access in Security & Privacy settings
+- **Linux**: Ensure user has disk access permissions (`sudo` if needed)
 
 ### **Getting Help**
 - 📖 **Documentation**: Check `CI_CD_PROCESS.md` and `CROSS_PLATFORM_TESTING.md`
