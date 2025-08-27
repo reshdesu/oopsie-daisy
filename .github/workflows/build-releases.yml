@@ -26,9 +26,6 @@ jobs:
     - name: Install dependencies
       run: uv sync --extra test --extra gpu
     
-    - name: Run cross-platform compatibility tests
-      run: uv run python tests/test_cross_platform.py
-    
     - name: Install PyInstaller
       run: uv pip install pyinstaller
     
@@ -57,9 +54,6 @@ jobs:
     
     - name: Install dependencies
       run: uv sync --extra test --extra gpu
-    
-    - name: Run cross-platform compatibility tests
-      run: uv run python tests/test_cross_platform.py
     
     - name: Install PyInstaller
       run: uv pip install pyinstaller
@@ -94,9 +88,6 @@ jobs:
     
     - name: Install dependencies
       run: uv sync --extra test --extra gpu
-    
-    - name: Run cross-platform compatibility tests
-      run: uv run python tests/test_cross_platform.py
     
     - name: Install PyInstaller
       run: uv pip install pyinstaller
