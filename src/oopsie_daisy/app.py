@@ -9,7 +9,7 @@ import math
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, 
-    QPushButton, QLabel, QStackedWidget
+    QPushButton, QLabel, QStackedWidget, QSplitter
 )
 from PySide6.QtCore import Qt, QThread, QTimer, Signal, QPropertyAnimation, QEasingCurve, QRect, QPointF
 from PySide6.QtGui import QFont, QPixmap, QPalette, QColor, QBrush, QPen, QPainter
@@ -38,11 +38,15 @@ class RealStarryBackground(QWidget):
     def create_stars(self):
         """Create realistic twinkling stars across the entire area"""
         self.stars = []
-        width = max(1200, self.width())
-        height = max(800, self.height())
+        width = max(800, self.width())
+        height = max(600, self.height())
         
-        # Create 500 stars for richer coverage
-        for _ in range(500):
+        # Adaptive star count based on screen area
+        area = width * height
+        star_density = 0.0003  # stars per pixel
+        star_count = max(200, min(800, int(area * star_density)))
+        
+        for _ in range(star_count):
             star = {
                 'x': random.randint(0, width),
                 'y': random.randint(0, height),
@@ -140,8 +144,44 @@ class OopsieDaisyMainWindow(QMainWindow):
         
     def setup_ui(self):
         self.setWindowTitle("Oopsie Daisy - File Recovery")
-        self.setMinimumSize(1000, 700)
-        self.resize(1200, 800)
+        
+        # Get screen dimensions and make UI adaptive
+        screen = QApplication.primaryScreen()
+        screen_geometry = screen.availableGeometry()
+        screen_width = screen_geometry.width()
+        screen_height = screen_geometry.height()
+        
+        # Calculate adaptive window size (70-80% of screen size)
+        if screen_width >= 1920:  # Large displays
+            window_width = int(screen_width * 0.7)
+            window_height = int(screen_height * 0.75)
+        elif screen_width >= 1366:  # Medium displays  
+            window_width = int(screen_width * 0.75)
+            window_height = int(screen_height * 0.8)
+        else:  # Small displays
+            window_width = int(screen_width * 0.85)
+            window_height = int(screen_height * 0.85)
+            
+        # Set minimum size based on screen size
+        min_width = min(800, int(screen_width * 0.6))
+        min_height = min(600, int(screen_height * 0.6))
+        
+        self.setMinimumSize(min_width, min_height)
+        self.resize(window_width, window_height)
+        
+        # Center the window
+        self.move(
+            (screen_width - window_width) // 2,
+            (screen_height - window_height) // 2
+        )
+        
+        # Set adaptive font scaling
+        if screen_width >= 1920:
+            self.font_scale = 1.0  # Normal fonts for large screens
+        elif screen_width >= 1366:
+            self.font_scale = 0.9  # Slightly smaller fonts
+        else:
+            self.font_scale = 0.8  # Smaller fonts for small screens
         
         # Main container
         central_widget = QWidget()
@@ -149,22 +189,37 @@ class OopsieDaisyMainWindow(QMainWindow):
         
         # Add realistic starry background layer covering entire window
         self.starry_background = RealStarryBackground(central_widget)
-        self.starry_background.setGeometry(0, 0, self.width(), self.height())
+        self.starry_background.setGeometry(0, 0, window_width, window_height)
         self.starry_background.lower()  # Send to back
         
-        # Use horizontal layout for modern sidebar + main content design
+        # Use splitter for resizable sidebar + main content design
+        main_splitter = QSplitter(Qt.Horizontal, central_widget)
+        main_splitter.setStyleSheet("QSplitter::handle { background: rgba(255, 105, 180, 0.3); width: 3px; }")
+        
+        # Main layout just contains the splitter
         main_layout = QHBoxLayout(central_widget)
         main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
+        main_layout.addWidget(main_splitter)
         
-        # Left sidebar
+        # Left sidebar - responsive width
         sidebar = QWidget()
-        sidebar.setFixedWidth(320)
         sidebar.setObjectName("sidebar")
         
+        # Set minimum and maximum width based on screen size
+        min_sidebar_width = max(200, int(screen_width * 0.15))
+        max_sidebar_width = max(350, int(screen_width * 0.25))
+        
+        sidebar.setMinimumWidth(min_sidebar_width)
+        sidebar.setMaximumWidth(max_sidebar_width)
+        
         sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(32, 40, 32, 40)
-        sidebar_layout.setSpacing(24)
+        
+        # Adaptive spacing based on screen size
+        margin = max(16, int(screen_width * 0.015))
+        spacing = max(16, int(screen_height * 0.02))
+        
+        sidebar_layout.setContentsMargins(margin, margin, margin, margin)
+        sidebar_layout.setSpacing(spacing)
         
         # Logo/Brand area
         brand_container = QWidget()
@@ -211,32 +266,48 @@ class OopsieDaisyMainWindow(QMainWindow):
         sidebar_layout.addWidget(nav_container)
         sidebar_layout.addSpacing(24)
         
-        # Features section
-        features_group = QWidget()
-        features_group.setObjectName("stats-card")
-        features_layout = QVBoxLayout(features_group)
-        features_layout.setContentsMargins(16, 16, 16, 16)
-        features_layout.setSpacing(8)
+        # Hardware monitoring section in sidebar
+        hardware_group = QWidget()
+        hardware_group.setObjectName("stats-card")
+        hardware_layout = QVBoxLayout(hardware_group)
+        hardware_layout.setContentsMargins(16, 16, 16, 16)
+        hardware_layout.setSpacing(8)
         
-        features_title = QLabel("Professional Features")
-        features_title.setObjectName("stats-title")
-        features_layout.addWidget(features_title)
+        hardware_title = QLabel("System Monitor")
+        hardware_title.setObjectName("stats-title")
+        hardware_layout.addWidget(hardware_title)
         
-        features = [
-            "🔍 Deep disk scanning",
-            "🧬 Signature-based recovery", 
-            "⚡ GPU acceleration",
-            "🖥️ Multi-core processing",
-            "📁 All file types supported",
-            "💾 Raw partition recovery"
-        ]
+        # Create hardware monitor
+        from .hardware_monitor_qt import HardwareMonitor
+        self.sidebar_hardware_monitor = HardwareMonitor(self)
         
-        for feature in features:
-            feature_label = QLabel(feature)
-            feature_label.setStyleSheet("color: rgba(255, 255, 255, 0.9); font-size: 12px; margin: 2px 0;")
-            features_layout.addWidget(feature_label)
+        # CPU stats
+        self.sidebar_cpu_usage = QLabel("CPU: 0%")
+        self.sidebar_cpu_usage.setStyleSheet("color: rgba(255, 255, 255, 0.9); font-size: 12px; margin: 2px 0;")
+        hardware_layout.addWidget(self.sidebar_cpu_usage)
         
-        sidebar_layout.addWidget(features_group)
+        self.sidebar_cpu_temp = QLabel("CPU temp: N/A")
+        self.sidebar_cpu_temp.setStyleSheet("color: rgba(255, 255, 255, 0.7); font-size: 11px; margin: 1px 0;")
+        hardware_layout.addWidget(self.sidebar_cpu_temp)
+        
+        # GPU stats - will be populated dynamically
+        self.sidebar_gpu_labels = []
+        self.sidebar_gpu_container = QWidget()
+        self.sidebar_gpu_layout = QVBoxLayout(self.sidebar_gpu_container)
+        self.sidebar_gpu_layout.setContentsMargins(0, 0, 0, 0)
+        self.sidebar_gpu_layout.setSpacing(2)
+        hardware_layout.addWidget(self.sidebar_gpu_container)
+        
+        # Memory stats
+        self.sidebar_memory_usage = QLabel("RAM: 0%")
+        self.sidebar_memory_usage.setStyleSheet("color: rgba(255, 255, 255, 0.9); font-size: 12px; margin: 2px 0;")
+        hardware_layout.addWidget(self.sidebar_memory_usage)
+        
+        sidebar_layout.addWidget(hardware_group)
+        
+        # Connect hardware monitor to update function
+        self.sidebar_hardware_monitor.stats_updated.connect(self.update_sidebar_hardware)
+        self.sidebar_hardware_monitor.start_monitoring()
         sidebar_layout.addStretch()
         
         # Main content area with integrated wizard
@@ -244,8 +315,13 @@ class OopsieDaisyMainWindow(QMainWindow):
         content_widget.setObjectName("main-content")
         
         content_layout = QVBoxLayout(content_widget)
-        content_layout.setContentsMargins(40, 40, 40, 40)
-        content_layout.setSpacing(24)
+        
+        # Adaptive content margins and spacing
+        content_margin = max(20, int(window_width * 0.03))
+        content_spacing = max(16, int(window_height * 0.025))
+        
+        content_layout.setContentsMargins(content_margin, content_margin, content_margin, content_margin)
+        content_layout.setSpacing(content_spacing)
         
         # Step indicator header
         self.step_indicator = QLabel("Step 1 of 4: Select Drive")
@@ -279,9 +355,18 @@ class OopsieDaisyMainWindow(QMainWindow):
         # Initialize navigation
         self.update_navigation()
         
-        # Add widgets to main layout
-        main_layout.addWidget(sidebar)
-        main_layout.addWidget(content_widget, 1)
+        # Add widgets to splitter with responsive ratios
+        main_splitter.addWidget(sidebar)
+        main_splitter.addWidget(content_widget)
+        
+        # Set initial sizes: sidebar 20%, content 80%
+        initial_sidebar_width = int(window_width * 0.2)
+        initial_content_width = int(window_width * 0.8)
+        main_splitter.setSizes([initial_sidebar_width, initial_content_width])
+        
+        # Set resize behavior: sidebar can shrink/grow, content gets remaining space
+        main_splitter.setStretchFactor(0, 0)  # Sidebar doesn't stretch much
+        main_splitter.setStretchFactor(1, 1)  # Content takes most stretching
     
     def resizeEvent(self, event):
         """Handle window resize to update starry background"""
@@ -655,6 +740,92 @@ class OopsieDaisyMainWindow(QMainWindow):
         self.current_step = 1
         self.stack.setCurrentIndex(self.current_step)
         self.update_navigation()
+    
+    def update_sidebar_hardware(self, stats):
+        """Update sidebar hardware monitoring display."""
+        try:
+            # Update CPU stats
+            cpu_percent = stats.get('cpu_percent', 0.0)
+            cpu_temp = stats.get('cpu_temp', 0.0)
+            self.sidebar_cpu_usage.setText(f"🔧 CPU: {cpu_percent:.1f}%")
+            
+            if cpu_temp > 0:
+                temp_color = self._get_temp_color(cpu_temp, 70, 85)
+                self.sidebar_cpu_temp.setText(f"<span style='color: {temp_color}'>CPU temp: {cpu_temp:.1f}°C</span>")
+            else:
+                self.sidebar_cpu_temp.setText("CPU temp: N/A")
+            
+            # Update GPU stats
+            gpu_list = stats.get('gpus', [])
+            self._update_sidebar_gpu_display(gpu_list)
+            
+            # Update memory stats
+            memory_percent = stats.get('memory_percent', 0.0)
+            self.sidebar_memory_usage.setText(f"💾 RAM: {memory_percent:.1f}%")
+            
+        except Exception as e:
+            print(f"Sidebar hardware display update error: {e}")
+    
+    def _update_sidebar_gpu_display(self, gpu_list):
+        """Update sidebar GPU display."""
+        try:
+            # If we have a different number of GPUs, recreate the display
+            if len(self.sidebar_gpu_labels) != len(gpu_list):
+                self._recreate_sidebar_gpu_display(gpu_list)
+            
+            # Update each GPU's stats
+            for i, gpu_info in enumerate(gpu_list):
+                if i < len(self.sidebar_gpu_labels):
+                    usage_label, temp_label = self.sidebar_gpu_labels[i]
+                    
+                    # Update usage
+                    gpu_name = gpu_info.get('name', f"GPU {i}")[:10]  # Short name for sidebar
+                    gpu_usage = gpu_info.get('usage', 0.0)
+                    usage_label.setText(f"🎮 {gpu_name}: {gpu_usage:.1f}%")
+                    
+                    # Update temperature
+                    gpu_temp = gpu_info.get('temp', 0.0)
+                    if gpu_temp > 0:
+                        temp_color = self._get_temp_color(gpu_temp, 75, 90)
+                        temp_label.setText(f"<span style='color: {temp_color}'>{gpu_name} temp: {gpu_temp:.1f}°C</span>")
+                    else:
+                        temp_label.setText(f"{gpu_name} temp: N/A")
+                        
+        except Exception as e:
+            print(f"Sidebar GPU display update error: {e}")
+    
+    def _recreate_sidebar_gpu_display(self, gpu_list):
+        """Recreate sidebar GPU display widgets."""
+        try:
+            # Clear existing labels
+            for usage_label, temp_label in self.sidebar_gpu_labels:
+                usage_label.deleteLater()
+                temp_label.deleteLater()
+            self.sidebar_gpu_labels.clear()
+            
+            # Create new labels for each GPU
+            for i, gpu_info in enumerate(gpu_list):
+                usage_label = QLabel(f"GPU {i}: 0%")
+                usage_label.setStyleSheet("color: rgba(255, 255, 255, 0.9); font-size: 12px; margin: 2px 0;")
+                self.sidebar_gpu_layout.addWidget(usage_label)
+                
+                temp_label = QLabel(f"GPU {i} temp: N/A")
+                temp_label.setStyleSheet("color: rgba(255, 255, 255, 0.7); font-size: 11px; margin: 1px 0;")
+                self.sidebar_gpu_layout.addWidget(temp_label)
+                
+                self.sidebar_gpu_labels.append((usage_label, temp_label))
+                
+        except Exception as e:
+            print(f"Sidebar GPU display recreation error: {e}")
+    
+    def _get_temp_color(self, temp, warning_threshold, critical_threshold):
+        """Get color based on temperature thresholds."""
+        if temp >= critical_threshold:
+            return "#ff4444"  # Red for critical
+        elif temp >= warning_threshold:
+            return "#ffaa00"  # Orange for warning
+        else:
+            return "#44ff44"  # Green for normal
 
 
 def run_app():

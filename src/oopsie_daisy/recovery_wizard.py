@@ -11,13 +11,481 @@ from PySide6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QComboBox, QCheckBox, QSpinBox, QGroupBox,
     QRadioButton, QButtonGroup, QTextEdit, QSplitter, QFrame, QScrollArea,
     QListWidget, QListWidgetItem, QStackedWidget, QGridLayout, QLineEdit,
-    QSlider, QTabWidget, QHeaderView
+    QSlider, QTabWidget, QHeaderView, QDialog, QFileDialog, QMessageBox,
+    QScrollArea, QTableWidget, QTableWidgetItem
 )
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from PySide6.QtGui import QPixmap, QIcon, QFont, QPainter, QColor
 
 from .advanced_recovery import AdvancedRecoveryEngine, RecoveryMode, RecoveredFile
-from .hardware_monitor import ScanHardwareMonitor
+from .hardware_monitor_qt import ScanHardwareMonitor
+
+
+class FileRecoveryThread(QThread):
+    """Background thread for file recovery operations."""
+    progress_updated = Signal(int, str, str)  # progress, current_file, status
+    recovery_completed = Signal(int, int)  # successful, failed
+    error_occurred = Signal(str)
+    
+    def __init__(self, engine: AdvancedRecoveryEngine, files: List[RecoveredFile], output_path: str):
+        super().__init__()
+        self.engine = engine
+        self.files = files
+        self.output_path = output_path
+        self._should_stop = False
+        
+    def run(self):
+        """Execute file recovery."""
+        successful = 0
+        failed = 0
+        
+        try:
+            from pathlib import Path
+            import time
+            
+            output_dir = Path(self.output_path)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            total_files = len(self.files)
+            
+            for i, file_info in enumerate(self.files):
+                if self._should_stop:
+                    break
+                    
+                progress = int((i / total_files) * 100)
+                self.progress_updated.emit(progress, file_info.name, "Recovering...")
+                
+                # Simulate recovery time
+                time.sleep(0.5)
+                
+                try:
+                    success = self.engine.recover_file(file_info, str(output_dir))
+                    if success:
+                        successful += 1
+                        self.progress_updated.emit(progress, file_info.name, "✅ Recovered")
+                    else:
+                        failed += 1
+                        self.progress_updated.emit(progress, file_info.name, "❌ Failed")
+                except Exception as e:
+                    failed += 1
+                    self.progress_updated.emit(progress, file_info.name, f"❌ Error: {str(e)[:30]}")
+                
+                time.sleep(0.2)  # Brief pause between files
+                
+            self.progress_updated.emit(100, "Complete", f"Finished: {successful} successful, {failed} failed")
+            self.recovery_completed.emit(successful, failed)
+            
+        except Exception as e:
+            self.error_occurred.emit(str(e))
+    
+    def stop(self):
+        """Stop the recovery operation."""
+        self._should_stop = True
+
+
+class FileRecoveryDialog(QDialog):
+    """Progress dialog for file recovery operations."""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.recovery_thread = None
+        self.setup_ui()
+        
+    def setup_ui(self):
+        self.setWindowTitle("🔄 Recovering Files...")
+        self.setModal(True)
+        
+        # Adaptive dialog size based on screen
+        from PySide6.QtWidgets import QApplication
+        screen = QApplication.primaryScreen()
+        if screen:
+            screen_geometry = screen.availableGeometry()
+            screen_width = screen_geometry.width()
+            screen_height = screen_geometry.height()
+            
+            # Scale dialog size to screen
+            dialog_width = max(400, min(600, int(screen_width * 0.35)))
+            dialog_height = max(250, min(350, int(screen_height * 0.25)))
+            
+            self.setFixedSize(dialog_width, dialog_height)
+        else:
+            self.setFixedSize(500, 300)
+        
+        layout = QVBoxLayout(self)
+        
+        # Header
+        header = QLabel("💾 File Recovery in Progress")
+        header.setFont(QFont("Arial", 14, QFont.Bold))
+        header.setAlignment(Qt.AlignCenter)
+        layout.addWidget(header)
+        
+        # Progress bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setTextVisible(True)
+        layout.addWidget(self.progress_bar)
+        
+        # Current file
+        self.current_file_label = QLabel("Preparing...")
+        self.current_file_label.setStyleSheet("font-weight: bold; color: #2E86AB;")
+        layout.addWidget(self.current_file_label)
+        
+        # Status
+        self.status_label = QLabel("Initializing recovery process...")
+        self.status_label.setStyleSheet("color: #666; font-size: 12px;")
+        layout.addWidget(self.status_label)
+        
+        # Stats
+        stats_layout = QHBoxLayout()
+        self.successful_label = QLabel("✅ Success: 0")
+        self.failed_label = QLabel("❌ Failed: 0")
+        stats_layout.addWidget(self.successful_label)
+        stats_layout.addWidget(self.failed_label)
+        stats_layout.addStretch()
+        layout.addLayout(stats_layout)
+        
+        layout.addStretch()
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        self.cancel_btn = QPushButton("❌ Cancel")
+        self.cancel_btn.clicked.connect(self.cancel_recovery)
+        button_layout.addStretch()
+        button_layout.addWidget(self.cancel_btn)
+        
+        layout.addLayout(button_layout)
+        
+        # Track stats
+        self.successful_count = 0
+        self.failed_count = 0
+        
+    def start_recovery(self, engine: AdvancedRecoveryEngine, files: List[RecoveredFile], output_path: str):
+        """Start the file recovery process."""
+        self.recovery_thread = FileRecoveryThread(engine, files, output_path)
+        self.recovery_thread.progress_updated.connect(self.update_progress)
+        self.recovery_thread.recovery_completed.connect(self.on_recovery_completed)
+        self.recovery_thread.error_occurred.connect(self.on_recovery_error)
+        self.recovery_thread.start()
+        
+    def update_progress(self, progress: int, current_file: str, status: str):
+        """Update progress display."""
+        self.progress_bar.setValue(progress)
+        self.current_file_label.setText(f"📄 {current_file}")
+        self.status_label.setText(status)
+        
+        # Update stats
+        if "✅" in status:
+            self.successful_count += 1
+            self.successful_label.setText(f"✅ Success: {self.successful_count}")
+        elif "❌" in status and "Failed" in status:
+            self.failed_count += 1
+            self.failed_label.setText(f"❌ Failed: {self.failed_count}")
+            
+    def on_recovery_completed(self, successful: int, failed: int):
+        """Handle recovery completion."""
+        self.cancel_btn.setText("✅ Close")
+        self.cancel_btn.clicked.disconnect()
+        self.cancel_btn.clicked.connect(self.accept)
+        
+        # Show completion message
+        QMessageBox.information(self, "Recovery Complete", 
+                               f"File recovery completed!\n\n"
+                               f"✅ Successfully recovered: {successful} files\n"
+                               f"❌ Failed to recover: {failed} files")
+        
+    def on_recovery_error(self, error: str):
+        """Handle recovery error."""
+        QMessageBox.critical(self, "Recovery Error", f"An error occurred during recovery:\n\n{error}")
+        self.reject()
+        
+    def cancel_recovery(self):
+        """Cancel the recovery process."""
+        if self.recovery_thread and self.recovery_thread.isRunning():
+            self.recovery_thread.stop()
+            self.recovery_thread.wait()
+        self.reject()
+        
+    def closeEvent(self, event):
+        """Handle dialog close."""
+        if self.recovery_thread and self.recovery_thread.isRunning():
+            self.recovery_thread.stop()
+            self.recovery_thread.wait()
+        event.accept()
+
+
+class FilePreviewDialog(QDialog):
+    """Dialog for previewing recovered file information and content."""
+    
+    def __init__(self, file_info: RecoveredFile, parent=None):
+        super().__init__(parent)
+        self.file_info = file_info
+        self.setup_ui()
+        
+    def setup_ui(self):
+        self.setWindowTitle(f"📄 Preview: {self.file_info.name}")
+        
+        # Adaptive dialog size
+        from PySide6.QtWidgets import QApplication
+        screen = QApplication.primaryScreen()
+        if screen:
+            screen_geometry = screen.availableGeometry()
+            screen_width = screen_geometry.width()
+            screen_height = screen_geometry.height()
+            
+            # Scale dialog size to screen (larger than recovery dialog)
+            dialog_width = max(600, min(800, int(screen_width * 0.5)))
+            dialog_height = max(500, min(700, int(screen_height * 0.6)))
+            
+            self.resize(dialog_width, dialog_height)
+        else:
+            self.resize(700, 600)
+            
+        self.setModal(True)
+        
+        layout = QVBoxLayout(self)
+        
+        # Header with file icon and name
+        header_layout = QHBoxLayout()
+        
+        # File icon based on type
+        file_icon = self._get_file_icon(self.file_info.file_type)
+        icon_label = QLabel(file_icon)
+        icon_label.setStyleSheet("font-size: 48px;")
+        header_layout.addWidget(icon_label)
+        
+        # File name and basic info
+        info_layout = QVBoxLayout()
+        
+        name_label = QLabel(self.file_info.name)
+        name_label.setFont(QFont("Arial", 16, QFont.Bold))
+        name_label.setStyleSheet("color: #2E86AB;")
+        info_layout.addWidget(name_label)
+        
+        type_label = QLabel(f"Type: {self.file_info.file_type.upper()}")
+        type_label.setStyleSheet("color: #666; font-size: 14px;")
+        info_layout.addWidget(type_label)
+        
+        size_label = QLabel(f"Size: {self._format_file_size(self.file_info.size)}")
+        size_label.setStyleSheet("color: #666; font-size: 14px;")
+        info_layout.addWidget(size_label)
+        
+        header_layout.addLayout(info_layout)
+        header_layout.addStretch()
+        
+        layout.addLayout(header_layout)
+        
+        # Separator
+        separator = QFrame()
+        separator.setFrameStyle(QFrame.HLine | QFrame.Sunken)
+        layout.addWidget(separator)
+        
+        # File details table
+        details_label = QLabel("📋 File Details")
+        details_label.setFont(QFont("Arial", 14, QFont.Bold))
+        layout.addWidget(details_label)
+        
+        details_table = QTableWidget(0, 2)
+        details_table.setHorizontalHeaderLabels(["Property", "Value"])
+        details_table.horizontalHeader().setStretchLastSection(True)
+        details_table.setAlternatingRowColors(True)
+        details_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        
+        # Add file properties
+        properties = [
+            ("Full Path", self.file_info.path),
+            ("File Type", self.file_info.file_type.upper()),
+            ("Size", self._format_file_size(self.file_info.size)),
+            ("Recovery Quality", f"{self.file_info.quality * 100:.1f}%"),
+            ("Recoverable", "Yes" if self.file_info.recoverable else "No"),
+            ("Preview Available", "Yes" if self.file_info.preview_available else "No"),
+        ]
+        
+        if self.file_info.signature:
+            properties.append(("Signature", self.file_info.signature.description))
+            properties.append(("MIME Type", self.file_info.signature.mime_type))
+        
+        if self.file_info.created_time:
+            import datetime
+            created = datetime.datetime.fromtimestamp(self.file_info.created_time)
+            properties.append(("Created", created.strftime("%Y-%m-%d %H:%M:%S")))
+            
+        if self.file_info.modified_time:
+            import datetime
+            modified = datetime.datetime.fromtimestamp(self.file_info.modified_time)
+            properties.append(("Modified", modified.strftime("%Y-%m-%d %H:%M:%S")))
+            
+        if self.file_info.deleted_time:
+            import datetime
+            deleted = datetime.datetime.fromtimestamp(self.file_info.deleted_time)
+            properties.append(("Deleted", deleted.strftime("%Y-%m-%d %H:%M:%S")))
+        
+        details_table.setRowCount(len(properties))
+        for i, (prop, value) in enumerate(properties):
+            details_table.setItem(i, 0, QTableWidgetItem(prop))
+            details_table.setItem(i, 1, QTableWidgetItem(str(value)))
+        
+        layout.addWidget(details_table)
+        
+        # Content preview section
+        if self.file_info.preview_available:
+            preview_label = QLabel("👁️ Content Preview")
+            preview_label.setFont(QFont("Arial", 14, QFont.Bold))
+            layout.addWidget(preview_label)
+            
+            preview_content = self._get_preview_content()
+            if preview_content:
+                preview_scroll = QScrollArea()
+                preview_widget = QWidget()
+                preview_layout = QVBoxLayout(preview_widget)
+                
+                preview_text = QLabel(preview_content)
+                preview_text.setWordWrap(True)
+                preview_text.setStyleSheet("""
+                    QLabel {
+                        background: #f8f9fa;
+                        border: 1px solid #dee2e6;
+                        border-radius: 4px;
+                        padding: 12px;
+                        font-family: 'Consolas', 'Monaco', monospace;
+                        font-size: 12px;
+                    }
+                """)
+                preview_layout.addWidget(preview_text)
+                
+                preview_scroll.setWidget(preview_widget)
+                preview_scroll.setMaximumHeight(200)
+                layout.addWidget(preview_scroll)
+        else:
+            no_preview_label = QLabel("🚫 Preview not available for this file type")
+            no_preview_label.setStyleSheet("color: #888; font-style: italic; padding: 20px;")
+            no_preview_label.setAlignment(Qt.AlignCenter)
+            layout.addWidget(no_preview_label)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        if self.file_info.recoverable:
+            recover_btn = QPushButton("💾 Recover This File")
+            recover_btn.setStyleSheet("""
+                QPushButton {
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                        stop:0 #51cf66, stop:1 #37b24d);
+                    border: none;
+                    border-radius: 6px;
+                    color: white;
+                    font-weight: bold;
+                    padding: 10px 20px;
+                }
+                QPushButton:hover {
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                        stop:0 #69db7c, stop:1 #51cf66);
+                }
+            """)
+            recover_btn.clicked.connect(self.recover_single_file)
+            button_layout.addWidget(recover_btn)
+        
+        close_btn = QPushButton("✖️ Close")
+        close_btn.clicked.connect(self.accept)
+        button_layout.addStretch()
+        button_layout.addWidget(close_btn)
+        
+        layout.addLayout(button_layout)
+    
+    def _get_file_icon(self, file_type: str) -> str:
+        """Get appropriate emoji icon for file type."""
+        icons = {
+            'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️', 'bmp': '🖼️', 'webp': '🖼️', 'tiff': '🖼️',
+            'pdf': '📄', 'doc': '📝', 'docx': '📝', 'txt': '📄', 'rtf': '📝',
+            'xls': '📊', 'xlsx': '📊', 'csv': '📊',
+            'ppt': '📽️', 'pptx': '📽️',
+            'mp3': '🎵', 'wav': '🎵', 'flac': '🎵', 'aac': '🎵',
+            'mp4': '🎬', 'avi': '🎬', 'mov': '🎬', 'mkv': '🎬',
+            'zip': '📦', 'rar': '📦', '7z': '📦', 'tar': '📦',
+            'exe': '⚙️', 'msi': '⚙️', 'dll': '⚙️',
+            'sqlite': '🗃️', 'db': '🗃️', 'pst': '📧'
+        }
+        return icons.get(file_type.lower(), '📄')
+    
+    def _format_file_size(self, size_bytes: int) -> str:
+        """Format file size in human readable format."""
+        if size_bytes < 1024:
+            return f"{size_bytes} bytes"
+        elif size_bytes < 1024 * 1024:
+            return f"{size_bytes / 1024:.1f} KB"
+        elif size_bytes < 1024 * 1024 * 1024:
+            return f"{size_bytes / (1024 * 1024):.1f} MB"
+        else:
+            return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
+    
+    def _get_preview_content(self) -> Optional[str]:
+        """Get preview content for the file."""
+        try:
+            file_path = Path(self.file_info.path)
+            if not file_path.exists():
+                return "⚠️ File not accessible for preview (may be deleted or in unallocated space)"
+            
+            # Text files
+            if self.file_info.file_type.lower() in ['txt', 'log', 'ini', 'cfg', 'conf']:
+                try:
+                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        content = f.read(1000)  # First 1000 characters
+                        if len(content) == 1000:
+                            content += "\n\n... (file continues)"
+                        return content
+                except Exception:
+                    return "❌ Unable to read file content"
+            
+            # Image files - show basic info
+            elif self.file_info.file_type.lower() in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']:
+                return f"🖼️ Image file\nFormat: {self.file_info.file_type.upper()}\nSize: {self._format_file_size(self.file_info.size)}\n\n💡 Use an image viewer to see the actual image after recovery."
+            
+            # PDF files
+            elif self.file_info.file_type.lower() == 'pdf':
+                return f"📄 PDF Document\nSize: {self._format_file_size(self.file_info.size)}\n\n💡 Use a PDF viewer to read the document after recovery."
+            
+            # Archive files
+            elif self.file_info.file_type.lower() in ['zip', 'rar', '7z', 'tar']:
+                return f"📦 Archive file\nFormat: {self.file_info.file_type.upper()}\nSize: {self._format_file_size(self.file_info.size)}\n\n💡 Extract the archive after recovery to access its contents."
+            
+            # Media files
+            elif self.file_info.file_type.lower() in ['mp3', 'wav', 'flac', 'mp4', 'avi', 'mov']:
+                media_type = "🎵 Audio" if self.file_info.file_type.lower() in ['mp3', 'wav', 'flac'] else "🎬 Video"
+                return f"{media_type} file\nFormat: {self.file_info.file_type.upper()}\nSize: {self._format_file_size(self.file_info.size)}\n\n💡 Use a media player to play the file after recovery."
+            
+            else:
+                return f"📁 {self.file_info.file_type.upper()} file\nSize: {self._format_file_size(self.file_info.size)}\n\n💡 File preview not available for this format."
+                
+        except Exception as e:
+            return f"❌ Error generating preview: {str(e)}"
+    
+    def recover_single_file(self):
+        """Recover just this single file."""
+        # Ask user for output directory
+        output_dir = QFileDialog.getExistingDirectory(
+            self, 
+            "Select Recovery Directory",
+            str(Path.home() / "Desktop"),
+            QFileDialog.ShowDirsOnly
+        )
+        
+        if not output_dir:
+            return  # User cancelled
+        
+        # Create and show progress dialog for single file
+        recovery_dialog = FileRecoveryDialog(self)
+        
+        # Get the engine from parent
+        engine = None
+        parent = self.parent()
+        while parent and not hasattr(parent, 'engine'):
+            parent = parent.parent()
+        if parent and hasattr(parent, 'engine'):
+            engine = parent.engine
+        else:
+            engine = AdvancedRecoveryEngine()
+        
+        recovery_dialog.start_recovery(engine, [self.file_info], output_dir)
+        recovery_dialog.exec()
 
 
 class RecoveryWizardThread(QThread):
@@ -220,7 +688,7 @@ class ScanProgressWidget(QWidget):
     
     def __init__(self):
         super().__init__()
-        self.hardware_monitor = ScanHardwareMonitor()
+        self.hardware_monitor = ScanHardwareMonitor(self)
         self.setup_ui()
         
     def setup_ui(self):
@@ -262,6 +730,20 @@ class ScanProgressWidget(QWidget):
         
         layout.addWidget(stats_group)
         
+        # Scan start info section
+        scan_start_group = QGroupBox("🚀 Scan Started")
+        scan_start_layout = QVBoxLayout(scan_start_group)
+        
+        self.scan_start_time_label = QLabel("Not started")
+        self.scan_start_stats_label = QLabel("Initial hardware stats will appear here")
+        self.scan_start_stats_label.setStyleSheet("color: #888; font-size: 11px;")
+        self.scan_start_stats_label.setWordWrap(True)
+        
+        scan_start_layout.addWidget(self.scan_start_time_label)
+        scan_start_layout.addWidget(self.scan_start_stats_label)
+        
+        layout.addWidget(scan_start_group)
+        
         # Hardware monitoring section
         hardware_group = QGroupBox("🖥️ Hardware Performance")
         hardware_layout = QGridLayout(hardware_group)
@@ -270,9 +752,8 @@ class ScanProgressWidget(QWidget):
         self.cpu_usage_label = QLabel("CPU: 0%")
         self.cpu_temp_label = QLabel("0°C")
         
-        # GPU monitoring  
-        self.gpu_usage_label = QLabel("GPU: 0%")
-        self.gpu_temp_label = QLabel("0°C")
+        # GPU monitoring - will be populated dynamically
+        self.gpu_labels = []  # Will hold list of GPU display widgets
         
         # Memory monitoring
         self.memory_usage_label = QLabel("RAM: 0%")
@@ -281,12 +762,16 @@ class ScanProgressWidget(QWidget):
         hardware_layout.addWidget(self.cpu_usage_label, 0, 1)
         hardware_layout.addWidget(self.cpu_temp_label, 0, 2)
         
-        hardware_layout.addWidget(QLabel("🎮"), 1, 0)  
-        hardware_layout.addWidget(self.gpu_usage_label, 1, 1)
-        hardware_layout.addWidget(self.gpu_temp_label, 1, 2)
+        # GPU section starts at row 1 - will be expanded dynamically
+        self.gpu_start_row = 1
         
-        hardware_layout.addWidget(QLabel("💾"), 2, 0)
-        hardware_layout.addWidget(self.memory_usage_label, 2, 1)
+        # Memory at the bottom - will be moved down as GPUs are added
+        self.memory_row = 2  # Will be updated dynamically
+        hardware_layout.addWidget(QLabel("💾"), self.memory_row, 0)
+        hardware_layout.addWidget(self.memory_usage_label, self.memory_row, 1)
+        
+        # Store layout reference for dynamic updates
+        self.hardware_layout = hardware_layout
         
         layout.addWidget(hardware_group)
         
@@ -305,11 +790,62 @@ class ScanProgressWidget(QWidget):
     def start_scan(self):
         """Start the scan timer and hardware monitoring."""
         import time
+        from datetime import datetime
+        
         self.start_time = time.time()
         self.timer.start(1000)  # Update every second
         
-        # Start hardware monitoring
-        self.hardware_monitor.start_scan_monitoring(self.update_hardware_display)
+        # Update scan start info
+        start_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.scan_start_time_label.setText(f"Started at: {start_datetime}")
+        
+        # Start hardware monitoring and connect signal
+        self.hardware_monitor.stats_updated.connect(self.update_hardware_display)
+        self.hardware_monitor.start_scan_monitoring()
+        
+        # Get initial hardware stats after a brief delay to let monitoring start
+        QTimer.singleShot(500, self._capture_initial_stats)
+    
+    def _capture_initial_stats(self):
+        """Capture initial hardware stats when scan starts."""
+        try:
+            initial_stats = self.hardware_monitor.get_current_stats()
+            
+            # Format initial stats text
+            cpu_percent = initial_stats.get('cpu_percent', 0.0)
+            cpu_temp = initial_stats.get('cpu_temp', 0.0)
+            memory_percent = initial_stats.get('memory_percent', 0.0)
+            gpu_list = initial_stats.get('gpus', [])
+            
+            stats_text = f"Initial stats: CPU {cpu_percent:.1f}%, RAM {memory_percent:.1f}%"
+            
+            # Add GPU information for all GPUs
+            if gpu_list:
+                gpu_info_parts = []
+                for i, gpu in enumerate(gpu_list):
+                    gpu_name = gpu.get('name', f'GPU{i}')[:8]  # Short name
+                    gpu_usage = gpu.get('usage', 0.0)
+                    gpu_info_parts.append(f"{gpu_name} {gpu_usage:.1f}%")
+                
+                if gpu_info_parts:
+                    stats_text += f", GPUs: {', '.join(gpu_info_parts)}"
+            else:
+                stats_text += ", GPUs: None detected"
+            
+            # Add temperatures
+            if cpu_temp > 0:
+                stats_text += f", CPU temp {cpu_temp:.1f}°C"
+                
+            gpu_temps = [f"{gpu.get('name', f'GPU{i}')[:8]} {gpu.get('temp', 0.0):.1f}°C" 
+                        for i, gpu in enumerate(gpu_list) if gpu.get('temp', 0.0) > 0]
+            if gpu_temps:
+                stats_text += f", GPU temps: {', '.join(gpu_temps)}"
+                
+            self.scan_start_stats_label.setText(stats_text)
+            
+        except Exception as e:
+            print(f"Error capturing initial stats: {e}")
+            self.scan_start_stats_label.setText("Initial stats: Unable to capture")
         
     def stop_scan(self):
         """Stop the scan timer and hardware monitoring."""
@@ -320,6 +856,24 @@ class ScanProgressWidget(QWidget):
         """Update progress display."""
         self.progress_bar.setValue(progress)
         self.status_label.setText(status)
+        
+        # Calculate and update ETA
+        if self.start_time and progress > 0:
+            import time
+            elapsed = time.time() - self.start_time
+            if progress < 100:
+                # Estimate remaining time based on current progress
+                estimated_total_time = elapsed * (100 / progress)
+                remaining_time = estimated_total_time - elapsed
+                
+                if remaining_time > 0:
+                    remaining_minutes = int(remaining_time // 60)
+                    remaining_seconds = int(remaining_time % 60)
+                    self.remaining_label.setText(f"Remaining: {remaining_minutes}:{remaining_seconds:02d}")
+                else:
+                    self.remaining_label.setText("Remaining: Nearly done")
+            else:
+                self.remaining_label.setText("Remaining: Complete")
         
     def update_statistics(self, files_found: int, data_scanned_mb: int):
         """Update scan statistics."""
@@ -349,16 +903,9 @@ class ScanProgressWidget(QWidget):
             else:
                 self.cpu_temp_label.setText("N/A")
             
-            # Update GPU stats
-            gpu_percent = stats.get('gpu_percent', 0.0)
-            gpu_temp = stats.get('gpu_temp', 0.0)
-            self.gpu_usage_label.setText(f"GPU: {gpu_percent:.1f}%")
-            
-            if gpu_temp > 0:
-                temp_color = self._get_temp_color(gpu_temp, 75, 90)  # GPU temp thresholds
-                self.gpu_temp_label.setText(f"<span style='color: {temp_color}'>{gpu_temp:.1f}°C</span>")
-            else:
-                self.gpu_temp_label.setText("N/A")
+            # Update GPU stats - handle multiple GPUs
+            gpu_list = stats.get('gpus', [])
+            self._update_gpu_display(gpu_list)
             
             # Update memory stats
             memory_percent = stats.get('memory_percent', 0.0)
@@ -366,6 +913,90 @@ class ScanProgressWidget(QWidget):
             
         except Exception as e:
             print(f"Hardware display update error: {e}")
+    
+    def _update_gpu_display(self, gpu_list):
+        """Update display for all GPUs."""
+        try:
+            # If we have a different number of GPUs, recreate the display
+            if len(self.gpu_labels) != len(gpu_list):
+                self._recreate_gpu_display(gpu_list)
+            
+            # Update each GPU's stats
+            for i, gpu_info in enumerate(gpu_list):
+                if i < len(self.gpu_labels):
+                    usage_label, temp_label = self.gpu_labels[i]
+                    
+                    # Update usage
+                    gpu_name = gpu_info.get('name', f"GPU {i}")[:15]  # Limit length
+                    gpu_usage = gpu_info.get('usage', 0.0)
+                    usage_label.setText(f"{gpu_name}: {gpu_usage:.1f}%")
+                    
+                    # Update temperature
+                    gpu_temp = gpu_info.get('temp', 0.0)
+                    if gpu_temp > 0:
+                        temp_color = self._get_temp_color(gpu_temp, 75, 90)
+                        temp_label.setText(f"<span style='color: {temp_color}'>{gpu_temp:.1f}°C</span>")
+                    else:
+                        temp_label.setText("N/A")
+                        
+        except Exception as e:
+            print(f"GPU display update error: {e}")
+    
+    def _recreate_gpu_display(self, gpu_list):
+        """Recreate GPU display widgets for new GPU count."""
+        try:
+            # Remove existing GPU labels from layout
+            for usage_label, temp_label in self.gpu_labels:
+                self.hardware_layout.removeWidget(usage_label)
+                self.hardware_layout.removeWidget(temp_label)
+                usage_label.deleteLater()
+                temp_label.deleteLater()
+            
+            # Remove existing GPU icons
+            for row in range(self.gpu_start_row, self.memory_row):
+                icon_item = self.hardware_layout.itemAtPosition(row, 0)
+                if icon_item:
+                    icon_widget = icon_item.widget()
+                    if icon_widget:
+                        self.hardware_layout.removeWidget(icon_widget)
+                        icon_widget.deleteLater()
+            
+            self.gpu_labels.clear()
+            
+            # Create new GPU display widgets
+            for i, gpu_info in enumerate(gpu_list):
+                row = self.gpu_start_row + i
+                
+                # GPU icon
+                gpu_icon = QLabel("🎮")
+                self.hardware_layout.addWidget(gpu_icon, row, 0)
+                
+                # Usage label
+                usage_label = QLabel(f"GPU {i}: 0%")
+                self.hardware_layout.addWidget(usage_label, row, 1)
+                
+                # Temperature label
+                temp_label = QLabel("0°C")
+                self.hardware_layout.addWidget(temp_label, row, 2)
+                
+                self.gpu_labels.append((usage_label, temp_label))
+            
+            # Move memory row to bottom
+            self.memory_row = self.gpu_start_row + len(gpu_list)
+            
+            # Remove existing memory widgets
+            memory_icon_item = self.hardware_layout.itemAtPosition(2, 0)  # Old position
+            if memory_icon_item:
+                memory_icon = memory_icon_item.widget()
+                if memory_icon:
+                    self.hardware_layout.removeWidget(memory_icon)
+                    self.hardware_layout.addWidget(memory_icon, self.memory_row, 0)
+            
+            self.hardware_layout.removeWidget(self.memory_usage_label)
+            self.hardware_layout.addWidget(self.memory_usage_label, self.memory_row, 1)
+                        
+        except Exception as e:
+            print(f"GPU display recreation error: {e}")
     
     def _get_temp_color(self, temp, warning_threshold, critical_threshold):
         """Get color based on temperature thresholds."""
@@ -585,15 +1216,54 @@ class ResultsWidget(QWidget):
     
     def preview_selected_file(self):
         """Preview the selected file."""
-        # This would show a preview dialog
-        pass
+        selected = self.get_selected_files()
+        if not selected:
+            QMessageBox.warning(self, "No File Selected", "Please select a file to preview first.")
+            return
+            
+        if len(selected) > 1:
+            QMessageBox.information(self, "Multiple Files Selected", 
+                                   "Please select only one file for preview. Showing preview for the first selected file.")
+        
+        # Show preview dialog for first selected file
+        file_info = selected[0]
+        preview_dialog = FilePreviewDialog(file_info, self)
+        preview_dialog.exec()
     
     def recover_selected_files(self):
-        """Signal to recover selected files."""
+        """Recover selected files with progress dialog."""
         selected = self.get_selected_files()
-        if selected:
-            # Emit signal or call parent method
-            print(f"Recovering {len(selected)} files...")
+        if not selected:
+            QMessageBox.warning(self, "No Files Selected", "Please select files to recover first.")
+            return
+            
+        # Ask user for output directory
+        output_dir = QFileDialog.getExistingDirectory(
+            self, 
+            "Select Recovery Directory",
+            str(Path.home() / "Desktop"),
+            QFileDialog.ShowDirsOnly
+        )
+        
+        if not output_dir:
+            return  # User cancelled
+            
+        # Create and show progress dialog
+        recovery_dialog = FileRecoveryDialog(self)
+        
+        # Get the engine from parent wizard
+        engine = None
+        parent = self.parent()
+        while parent and not hasattr(parent, 'engine'):
+            parent = parent.parent()
+        if parent and hasattr(parent, 'engine'):
+            engine = parent.engine
+        else:
+            # Fallback - create new engine
+            engine = AdvancedRecoveryEngine()
+        
+        recovery_dialog.start_recovery(engine, selected, output_dir)
+        recovery_dialog.exec()
 
 
 class RecoveryWizard(QWidget):
@@ -607,7 +1277,21 @@ class RecoveryWizard(QWidget):
         
     def setup_ui(self):
         self.setWindowTitle("🐱 Oopsie Daisy - Advanced Recovery Wizard")
-        self.setMinimumSize(1000, 700)
+        
+        # Get screen dimensions for adaptive sizing
+        from PySide6.QtWidgets import QApplication
+        screen = QApplication.primaryScreen()
+        if screen:
+            screen_geometry = screen.availableGeometry()
+            screen_width = screen_geometry.width()
+            screen_height = screen_geometry.height()
+            
+            # Adaptive minimum size
+            min_width = min(800, int(screen_width * 0.6))
+            min_height = min(600, int(screen_height * 0.65))
+            self.setMinimumSize(min_width, min_height)
+        else:
+            self.setMinimumSize(800, 600)
         
         layout = QVBoxLayout(self)
         
