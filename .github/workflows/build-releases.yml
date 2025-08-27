@@ -76,6 +76,49 @@ jobs:
       env:
         PYTHONIOENCODING: utf-8
     
+    - name: Test Windows executable (smoke test)
+      run: |
+        # Test basic executable functionality
+        echo "Testing if executable can be loaded..."
+        
+        # Check if file exists and is executable
+        if (Test-Path ".\dist\OopsieDaisy.exe") {
+          echo "✅ Executable file exists"
+          
+          # Get file info
+          $fileInfo = Get-ItemProperty ".\dist\OopsieDaisy.exe"
+          echo "File size: $($fileInfo.Length) bytes"
+          
+          # Try to get file version/properties (will fail if corrupted)
+          try {
+            $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo(".\dist\OopsieDaisy.exe")
+            echo "✅ Executable has valid PE structure"
+            echo "Internal name: $($versionInfo.InternalName)"
+          } catch {
+            echo "❌ Executable appears corrupted"
+            exit 1
+          }
+          
+          # Test functionality with test mode (no GUI)
+          echo "Testing core functionality..."
+          $testOutput = & ".\dist\OopsieDaisy.exe" --test 2>&1
+          if ($LASTEXITCODE -eq 0) {
+            echo "✅ Core functionality test passed"
+            echo "Test output:"
+            echo $testOutput
+          } else {
+            echo "❌ Core functionality test failed"
+            echo "Error output:"
+            echo $testOutput
+            exit 1
+          }
+        } else {
+          echo "❌ Executable file not found"
+          exit 1
+        }
+      shell: pwsh
+      timeout-minutes: 2
+    
     - name: Upload Windows artifact
       uses: actions/upload-artifact@v4
       with:
