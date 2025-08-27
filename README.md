@@ -37,13 +37,11 @@ Unlike intimidating recovery tools, **Oopsie Daisy makes file recovery accessibl
 
 For detailed guides, troubleshooting, and technical information:
 
-### **📖 [Visit Our Wiki](https://github.com/reshdesu/oopsie-daisy/wiki)**
-
 **Quick Links:**
-- **[Installation Guide](https://github.com/reshdesu/oopsie-daisy/wiki/Installation)** - Detailed setup for all platforms
-- **[Windows SmartScreen Help](https://github.com/reshdesu/oopsie-daisy/wiki/Windows-SmartScreen)** - Why Windows shows warnings & how to bypass
-- **[Troubleshooting](https://github.com/reshdesu/oopsie-daisy/wiki/Common-Issues)** - Solutions to common problems
-- **[User Guide](https://github.com/reshdesu/oopsie-daisy/wiki/User-Guide)** - Complete usage instructions
+- **[Installation Guide](docs/Installation.md)** - Detailed setup for all platforms
+- **[Windows SmartScreen Help](docs/Windows-SmartScreen.md)** - Why Windows shows warnings & how to bypass
+- **[Testing Documentation](docs/Testing.md)** - Our comprehensive testing approach
+- **[Community Testing](docs/Community-Testing.md)** - Help test on different systems
 
 ## 🛠️ For Developers
 
@@ -55,10 +53,9 @@ uv run oopsie-daisy
 ```
 
 **Developer Resources:**
-- **[Development Setup](https://github.com/reshdesu/oopsie-daisy/wiki/Development)**
-- **[Architecture Overview](https://github.com/reshdesu/oopsie-daisy/wiki/Architecture)**
-- **[Contributing Guide](https://github.com/reshdesu/oopsie-daisy/wiki/Contributing)**
-- **[Testing Documentation](https://github.com/reshdesu/oopsie-daisy/wiki/Testing)**
+- **[CI/CD Process](docs/CI-CD-Process.md)** - Build and release workflow
+- **[Testing Documentation](docs/Testing.md)** - Comprehensive testing approach
+- **[Community Testing](docs/Community-Testing.md)** - Help expand our testing coverage
 
 ## 🔒 Privacy & Security
 
@@ -71,7 +68,7 @@ uv run oopsie-daisy
 
 - 🐛 **[Report Issues](https://github.com/reshdesu/oopsie-daisy/issues)** - Bug reports and feature requests
 - 💬 **[Discussions](https://github.com/reshdesu/oopsie-daisy/discussions)** - Questions and community support
-- 🧪 **[Community Testing](https://github.com/reshdesu/oopsie-daisy/wiki/Community-Testing)** - Help test on different systems
+- 🧪 **[Community Testing](docs/Community-Testing.md)** - Help test on different systems
 
 ## 📄 License
 
