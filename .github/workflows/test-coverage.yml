@@ -30,6 +30,8 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y libxcb-cursor0 libgl1-mesa-dev libegl1-mesa-dev libxrandr2 libxss1 libxcursor1 libxcomposite1 libasound2t64 libxi6 libxtst6 xvfb
+        # Additional GUI testing dependencies
+        sudo apt-get install -y libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0
     
     - name: Install uv
       run: pip install uv
@@ -37,10 +39,18 @@ jobs:
     - name: Install dependencies
       run: uv sync --extra test --extra gpu
     
-    - name: Run tests with coverage
+    - name: Run basic tests with coverage
       run: |
         export QT_QPA_PLATFORM=offscreen
         uv run pytest tests/test_minimal.py tests/test_init.py --cov=src/oopsie_daisy --cov-report=xml --cov-report=term-missing --cov-report=html:htmlcov
+    
+    - name: Run GUI tests (cross-platform validation)
+      run: |
+        export QT_QPA_PLATFORM=offscreen
+        export DISPLAY=:99.0
+        # Start virtual display for GUI tests
+        xvfb-run -a -s "-screen 0 1920x1080x24" uv run pytest tests/test_gui_functionality.py tests/test_gui_visual.py -v --tb=short
+      continue-on-error: true  # Don't fail the entire build if GUI tests have issues
     
     - name: Upload coverage reports as artifact
       uses: actions/upload-artifact@v4
