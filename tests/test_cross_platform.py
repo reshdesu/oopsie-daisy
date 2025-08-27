@@ -1,19 +1,16 @@
 #!/usr/bin/env python3
 """
-Cross-platform hardware monitoring test script.
-Simulates different platforms to test our hardware monitoring logic.
+Cross-platform hardware monitoring tests.
+Tests hardware monitoring across Windows, macOS, and Linux platforms.
 """
 
-import sys
+import pytest
 import platform
 from unittest.mock import patch, MagicMock
-from pathlib import Path
-
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from oopsie_daisy.hardware_monitor_qt import HardwareMonitor
 
+@pytest.mark.integration
 def test_platform_detection():
     """Test that platform detection works correctly."""
     print("🔍 Testing platform detection...")
@@ -27,6 +24,7 @@ def test_platform_detection():
     assert monitor.system == current_system, f"Platform mismatch: {monitor.system} != {current_system}"
     print("✅ Platform detection working correctly!\n")
 
+@pytest.mark.integration  
 def test_windows_simulation():
     """Simulate Windows platform and test Windows-specific methods."""
     print("🪟 Testing Windows simulation...")
@@ -64,6 +62,7 @@ def test_windows_simulation():
     
     print("✅ Windows simulation tests passed!\n")
 
+@pytest.mark.integration
 def test_macos_simulation():
     """Simulate macOS platform and test macOS-specific methods."""
     print("🍎 Testing macOS simulation...")
@@ -115,6 +114,7 @@ def test_macos_simulation():
     
     print("✅ macOS simulation tests passed!\n")
 
+@pytest.mark.integration
 def test_error_handling():
     """Test error handling when commands fail."""
     print("🛡️ Testing error handling...")
@@ -136,6 +136,7 @@ def test_error_handling():
     
     print("✅ Error handling tests passed!\n")
 
+@pytest.mark.integration
 def test_cross_platform_gpu_detection():
     """Test that GPU detection chooses the right platform methods."""
     print("🎮 Testing cross-platform GPU detection...")
@@ -158,25 +159,4 @@ def test_cross_platform_gpu_detection():
     
     print("✅ Cross-platform GPU detection tests passed!\n")
 
-def main():
-    """Run all cross-platform tests."""
-    print("🚀 Starting cross-platform hardware monitoring tests...\n")
-    
-    try:
-        test_platform_detection()
-        test_windows_simulation()
-        test_macos_simulation()
-        test_error_handling()
-        test_cross_platform_gpu_detection()
-        
-        print("🎉 All cross-platform tests passed!")
-        print("✅ Hardware monitoring should work on Windows, macOS, and Linux")
-        
-    except Exception as e:
-        print(f"❌ Test failed: {e}")
-        return 1
-    
-    return 0
-
-if __name__ == "__main__":
-    exit(main())
+# Tests are now run via pytest - no main() function needed
