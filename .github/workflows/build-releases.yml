@@ -83,7 +83,7 @@ jobs:
         
         # Check if file exists and is executable
         if (Test-Path ".\dist\OopsieDaisy.exe") {
-          echo "✅ Executable file exists"
+          echo "SUCCESS: Executable file exists"
           
           # Get file info
           $fileInfo = Get-ItemProperty ".\dist\OopsieDaisy.exe"
@@ -92,10 +92,10 @@ jobs:
           # Try to get file version/properties (will fail if corrupted)
           try {
             $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo(".\dist\OopsieDaisy.exe")
-            echo "✅ Executable has valid PE structure"
+            echo "SUCCESS: Executable has valid PE structure"
             echo "Internal name: $($versionInfo.InternalName)"
           } catch {
-            echo "❌ Executable appears corrupted"
+            echo "ERROR: Executable appears corrupted"
             exit 1
           }
           
@@ -103,17 +103,17 @@ jobs:
           echo "Testing core functionality..."
           $testOutput = & ".\dist\OopsieDaisy.exe" --test 2>&1
           if ($LASTEXITCODE -eq 0) {
-            echo "✅ Core functionality test passed"
+            echo "SUCCESS: Core functionality test passed"
             echo "Test output:"
             echo $testOutput
           } else {
-            echo "❌ Core functionality test failed"
+            echo "ERROR: Core functionality test failed"
             echo "Error output:"
             echo $testOutput
             exit 1
           }
         } else {
-          echo "❌ Executable file not found"
+          echo "ERROR: Executable file not found"
           exit 1
         }
       shell: pwsh
