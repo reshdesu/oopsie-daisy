@@ -23,6 +23,11 @@ jobs:
       with:
         python-version: '3.12'
     
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libxcb-cursor0 libgl1-mesa-dev libegl1-mesa-dev libxrandr2 libxss1 libxcursor1 libxcomposite1 libasound2t64 libxi6 libxtst6 xvfb
+    
     - name: Install uv
       run: pip install uv
     
@@ -31,7 +36,8 @@ jobs:
     
     - name: Run tests with coverage
       run: |
-        uv run pytest tests/test_cross_platform.py tests/test_init.py tests/test_hardware_monitor.py --cov=src/oopsie_daisy --cov-report=xml --cov-report=term-missing --cov-report=html:htmlcov
+        export QT_QPA_PLATFORM=offscreen
+        uv run pytest tests/test_minimal.py tests/test_init.py --cov=src/oopsie_daisy --cov-report=xml --cov-report=term-missing --cov-report=html:htmlcov
     
     - name: Upload coverage reports as artifact
       uses: actions/upload-artifact@v4

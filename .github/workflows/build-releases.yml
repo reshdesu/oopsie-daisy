@@ -26,6 +26,9 @@ jobs:
     - name: Install dependencies
       run: uv sync --extra test --extra gpu
     
+    - name: Verify imports work
+      run: uv run python -c "import oopsie_daisy; print('✅ Imports working')"
+    
     - name: Install PyInstaller
       run: uv pip install pyinstaller
     
@@ -54,6 +57,9 @@ jobs:
     
     - name: Install dependencies
       run: uv sync --extra test --extra gpu
+    
+    - name: Verify imports work
+      run: uv run python -c "import oopsie_daisy; print('✅ Imports working')"
     
     - name: Install PyInstaller
       run: uv pip install pyinstaller
@@ -88,6 +94,9 @@ jobs:
     
     - name: Install dependencies
       run: uv sync --extra test --extra gpu
+    
+    - name: Verify imports work
+      run: uv run python -c "import oopsie_daisy; print('✅ Imports working')"
     
     - name: Install PyInstaller
       run: uv pip install pyinstaller
