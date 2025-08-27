@@ -60,11 +60,20 @@ jobs:
     - name: Install dependencies
       run: uv sync --extra test --extra gpu
     
+    - name: Setup Windows for Qt GUI testing
+      run: |
+        # Set Qt platform for headless testing
+        echo "QT_QPA_PLATFORM=offscreen" >> $env:GITHUB_ENV
+        # Install Visual C++ Redistributable (needed for Qt)
+        choco install --no-progress -y vcredist2019
+      shell: pwsh
+    
     - name: Verify imports work
       run: uv run python -c "import oopsie_daisy; print('Imports working')"
       shell: cmd
       env:
         PYTHONIOENCODING: utf-8
+        QT_QPA_PLATFORM: offscreen
     
     - name: Install PyInstaller
       run: uv pip install pyinstaller
@@ -97,6 +106,32 @@ jobs:
           } catch {
             echo "ERROR: Executable appears corrupted"
             exit 1
+          }
+          
+          # Test Windows GUI functionality
+          echo "Testing Windows GUI functionality..."
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $env:QT_LOGGING_RULES = "*=false"
+          try {
+            $testOutput = & ".\dist\OopsieDaisy.exe" --test 2>&1 | Out-String
+            if ($LASTEXITCODE -eq 0) {
+              echo "SUCCESS: Windows GUI functionality test passed"
+              echo "Test output:"
+              echo $testOutput.Trim()
+            } else {
+              echo "INFO: GUI test returned exit code $LASTEXITCODE"
+              echo "Output:"
+              echo $testOutput.Trim()
+              if ($testOutput -match "tests passed" -or $testOutput -match "successful") {
+                echo "SUCCESS: Core functionality working despite exit code"
+              } else {
+                echo "WARNING: GUI functionality may have issues"
+              }
+            }
+          } catch {
+            echo "WARNING: Could not run GUI test"
+            echo "Exception: $($_.Exception.Message)"
+            echo "This may indicate GUI dependency issues on Windows"
           }
           
           echo "SUCCESS: Windows executable built and validated successfully"

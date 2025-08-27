@@ -6,27 +6,40 @@ def main() -> None:
         print("Oopsie Daisy - File Recovery Tool")
         print("Application loaded successfully")
         
-        # Test basic imports
+        # Test Windows GUI functionality including Qt components
         try:
-            from .hardware_monitor_qt import HardwareMonitor
-            print("Hardware monitor import successful")
-            
+            # Test core recovery engine
             from .advanced_recovery import AdvancedRecoveryEngine
             print("Recovery engine import successful")
-            
-            from .recovery_wizard import DriveSelectionWidget
-            print("UI components import successful")
             
             # Test platform detection
             import platform
             system = platform.system()
             print(f"Platform detected: {system}")
             
-            print("All core functionality tests passed!")
+            # Test Qt-based hardware monitoring (critical for Windows GUI)
+            from .hardware_monitor_qt import HardwareMonitor
+            print("Hardware monitor import successful")
+            
+            # Test GUI components (this is what we want to validate on Windows)
+            from .recovery_wizard import DriveSelectionWidget
+            print("UI components import successful")
+            
+            # Test that we can create core components
+            engine = AdvancedRecoveryEngine()
+            print("Recovery engine creation successful")
+            
+            # Test hardware monitor creation (Windows GUI functionality)
+            monitor = HardwareMonitor()
+            print("Hardware monitor creation successful")
+            
+            print("All Windows GUI functionality tests passed!")
             return
             
         except Exception as e:
             print(f"Import test failed: {e}")
+            import traceback
+            traceback.print_exc()
             sys.exit(1)
     
     # Normal GUI mode
