@@ -213,6 +213,407 @@ class FileRecoveryDialog(QDialog):
         event.accept()
 
 
+class MultiFilePreviewDialog(QDialog):
+    """Dialog for previewing multiple recovered files in a standardized table format."""
+    
+    def __init__(self, files: List[RecoveredFile], parent=None):
+        super().__init__(parent)
+        self.files = files
+        self.setup_ui()
+        
+    def setup_ui(self):
+        file_count = len(self.files)
+        if file_count == 1:
+            self.setWindowTitle(f"📄 Preview: {self.files[0].name}")
+        else:
+            self.setWindowTitle(f"📄 Preview: {file_count} Selected Files")
+        
+        # Adaptive dialog size
+        from PySide6.QtWidgets import QApplication
+        screen = QApplication.primaryScreen()
+        if screen:
+            screen_geometry = screen.availableGeometry()
+            screen_width = screen_geometry.width()
+            screen_height = screen_geometry.height()
+            
+            # Larger dialog for multiple files
+            dialog_width = max(800, min(1200, int(screen_width * 0.7)))
+            dialog_height = max(600, min(900, int(screen_height * 0.8)))
+            
+            self.resize(dialog_width, dialog_height)
+        else:
+            self.resize(1000, 750)
+            
+        self.setModal(True)
+        
+        layout = QVBoxLayout(self)
+        
+        # Header
+        header_layout = QHBoxLayout()
+        
+        # Summary info
+        summary_layout = QVBoxLayout()
+        
+        if file_count == 1:
+            file_icon = self._get_file_icon(self.files[0].file_type)
+            title_text = f"{file_icon} {self.files[0].name}"
+        else:
+            title_text = f"📁 {file_count} Files Selected for Preview"
+            
+        title_label = QLabel(title_text)
+        title_label.setFont(QFont("Arial", 18, QFont.Bold))
+        title_label.setStyleSheet("color: #2E86AB; margin-bottom: 5px;")
+        summary_layout.addWidget(title_label)
+        
+        # Calculate summary stats
+        total_size = sum(f.size for f in self.files)
+        avg_quality = sum(f.quality for f in self.files) / len(self.files) if self.files else 0
+        file_types = len(set(f.file_type.lower() for f in self.files))
+        recoverable_count = sum(1 for f in self.files if f.recoverable)
+        
+        stats_text = (f"📊 Summary: {file_count} files, "
+                     f"{self._format_file_size(total_size)} total, "
+                     f"{avg_quality*100:.1f}% avg quality, "
+                     f"{file_types} different types, "
+                     f"{recoverable_count} recoverable")
+        
+        stats_label = QLabel(stats_text)
+        stats_label.setStyleSheet("color: #666; font-size: 14px;")
+        summary_layout.addWidget(stats_label)
+        
+        header_layout.addLayout(summary_layout)
+        header_layout.addStretch()
+        
+        layout.addLayout(header_layout)
+        
+        # Separator
+        separator = QFrame()
+        separator.setFrameStyle(QFrame.HLine | QFrame.Sunken)
+        layout.addWidget(separator)
+        
+        # Main content with tabs for single vs multiple files
+        if file_count == 1:
+            self._setup_single_file_view(layout, self.files[0])
+        else:
+            self._setup_multi_file_table(layout)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        if file_count > 1:
+            export_btn = QPushButton("📋 Export List")
+            export_btn.clicked.connect(self.export_file_list)
+            button_layout.addWidget(export_btn)
+        
+        close_btn = QPushButton("✅ Close")
+        close_btn.clicked.connect(self.accept)
+        close_btn.setDefault(True)
+        button_layout.addWidget(close_btn)
+        
+        layout.addLayout(button_layout)
+    
+    def _setup_single_file_view(self, layout, file_info):
+        """Setup detailed view for single file (existing functionality)."""
+        # File details table
+        details_label = QLabel("📋 File Details")
+        details_label.setFont(QFont("Arial", 14, QFont.Bold))
+        layout.addWidget(details_label)
+        
+        details_table = QTableWidget(0, 2)
+        details_table.setHorizontalHeaderLabels(["Property", "Value"])
+        details_table.horizontalHeader().setStretchLastSection(True)
+        details_table.setAlternatingRowColors(True)
+        details_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        details_table.setMaximumHeight(200)
+        
+        # Add file properties
+        properties = [
+            ("Full Path", file_info.path),
+            ("File Type", file_info.file_type.upper()),
+            ("Size", self._format_file_size(file_info.size)),
+            ("Recovery Quality", f"{file_info.quality * 100:.1f}%"),
+            ("Recoverable", "✅ Yes" if file_info.recoverable else "❌ No"),
+        ]
+        
+        if file_info.signature:
+            properties.append(("Signature", file_info.signature.description))
+            properties.append(("MIME Type", file_info.signature.mime_type))
+        
+        if file_info.created_time:
+            import datetime
+            created = datetime.datetime.fromtimestamp(file_info.created_time)
+            properties.append(("Created", created.strftime("%Y-%m-%d %H:%M:%S")))
+            
+        if file_info.modified_time:
+            import datetime
+            modified = datetime.datetime.fromtimestamp(file_info.modified_time)
+            properties.append(("Modified", modified.strftime("%Y-%m-%d %H:%M:%S")))
+        
+        for prop, value in properties:
+            row = details_table.rowCount()
+            details_table.insertRow(row)
+            details_table.setItem(row, 0, QTableWidgetItem(prop))
+            details_table.setItem(row, 1, QTableWidgetItem(str(value)))
+        
+        layout.addWidget(details_table)
+        
+        # Content preview section
+        preview_content = self._get_preview_content(file_info)
+        if preview_content:
+            preview_label = QLabel("🐱 Content Preview")
+            preview_label.setFont(QFont("Arial", 14, QFont.Bold))
+            layout.addWidget(preview_label)
+            
+            preview_text = QTextEdit()
+            preview_text.setPlainText(preview_content)
+            preview_text.setReadOnly(True)
+            preview_text.setMaximumHeight(250)
+            preview_text.setFont(QFont("Courier", 10))
+            layout.addWidget(preview_text)
+        else:
+            no_preview_label = QLabel("🚫 Content preview not available for this file type")
+            no_preview_label.setStyleSheet("color: #888; font-style: italic; margin: 20px;")
+            layout.addWidget(no_preview_label)
+    
+    def _setup_multi_file_table(self, layout):
+        """Setup table view for multiple files."""
+        table_label = QLabel("📋 File Details Table")
+        table_label.setFont(QFont("Arial", 14, QFont.Bold))
+        layout.addWidget(table_label)
+        
+        # Create comprehensive table
+        table = QTableWidget()
+        headers = ["📁 Name", "📄 Type", "📏 Size", "⭐ Quality", "🔧 Recoverable", "📅 Path", "🐱 Preview"]
+        table.setColumnCount(len(headers))
+        table.setHorizontalHeaderLabels(headers)
+        table.setRowCount(len(self.files))
+        table.setAlternatingRowColors(True)
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setSelectionBehavior(QTableWidget.SelectRows)
+        
+        # Populate table
+        for row, file_info in enumerate(self.files):
+            # File name with icon
+            name_item = QTableWidgetItem(f"{self._get_file_icon(file_info.file_type)} {file_info.name}")
+            table.setItem(row, 0, name_item)
+            
+            # File type
+            type_item = QTableWidgetItem(file_info.file_type.upper())
+            table.setItem(row, 1, type_item)
+            
+            # File size
+            size_item = QTableWidgetItem(self._format_file_size(file_info.size))
+            table.setItem(row, 2, size_item)
+            
+            # Quality with color coding
+            quality_item = QTableWidgetItem(f"{file_info.quality * 100:.1f}%")
+            if file_info.quality >= 0.8:
+                quality_item.setForeground(QColor("#51cf66"))  # Green
+            elif file_info.quality >= 0.5:
+                quality_item.setForeground(QColor("#fab005"))  # Yellow
+            else:
+                quality_item.setForeground(QColor("#fa5252"))  # Red
+            table.setItem(row, 3, quality_item)
+            
+            # Recoverable status
+            recoverable_item = QTableWidgetItem("✅ Yes" if file_info.recoverable else "❌ No")
+            if file_info.recoverable:
+                recoverable_item.setForeground(QColor("#51cf66"))
+            else:
+                recoverable_item.setForeground(QColor("#fa5252"))
+            table.setItem(row, 4, recoverable_item)
+            
+            # File path (truncated for display)
+            path_display = file_info.path
+            if len(path_display) > 50:
+                path_display = "..." + path_display[-47:]
+            path_item = QTableWidgetItem(path_display)
+            path_item.setToolTip(file_info.path)  # Full path on hover
+            table.setItem(row, 5, path_item)
+            
+            # Preview availability
+            has_preview = self._has_preview_content(file_info)
+            preview_item = QTableWidgetItem("🐱 Available" if has_preview else "🚫 No preview")
+            if has_preview:
+                preview_item.setForeground(QColor("#2E86AB"))
+            else:
+                preview_item.setForeground(QColor("#888"))
+            table.setItem(row, 6, preview_item)
+        
+        # Resize columns to content
+        table.resizeColumnsToContents()
+        
+        # Set minimum column widths
+        table.setColumnWidth(0, max(200, table.columnWidth(0)))  # Name
+        table.setColumnWidth(1, 80)   # Type
+        table.setColumnWidth(2, 100)  # Size  
+        table.setColumnWidth(3, 80)   # Quality
+        table.setColumnWidth(4, 100)  # Recoverable
+        table.setColumnWidth(5, 250)  # Path
+        table.setColumnWidth(6, 120)  # Preview
+        
+        # Enable sorting
+        table.setSortingEnabled(True)
+        
+        layout.addWidget(table)
+        
+        # Add double-click handler for detailed view
+        table.doubleClicked.connect(lambda index: self._show_detailed_view(self.files[index.row()]))
+        
+        # Info label
+        info_label = QLabel("💡 Double-click any row to see detailed preview of that file")
+        info_label.setStyleSheet("color: #666; font-style: italic; margin: 5px;")
+        layout.addWidget(info_label)
+    
+    def _show_detailed_view(self, file_info):
+        """Show detailed view for a specific file."""
+        detailed_dialog = MultiFilePreviewDialog([file_info], self)
+        detailed_dialog.exec()
+    
+    def export_file_list(self):
+        """Export file list to CSV."""
+        try:
+            from PySide6.QtWidgets import QFileDialog
+            import csv
+            from datetime import datetime
+            
+            # Get save location
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_name = f"oopsie_daisy_preview_{timestamp}.csv"
+            
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "Save File List", default_name,
+                "CSV files (*.csv);;All files (*.*)"
+            )
+            
+            if not file_path:
+                return
+            
+            # Export to CSV
+            with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                
+                # Write header
+                writer.writerow([
+                    'Name', 'Type', 'Size (bytes)', 'Size (formatted)', 'Quality (%)', 
+                    'Recoverable', 'Path', 'Has Preview', 'Created', 'Modified'
+                ])
+                
+                # Write file data
+                for file_info in self.files:
+                    created_str = ""
+                    modified_str = ""
+                    
+                    if file_info.created_time:
+                        created_str = datetime.fromtimestamp(file_info.created_time).strftime("%Y-%m-%d %H:%M:%S")
+                    if file_info.modified_time:
+                        modified_str = datetime.fromtimestamp(file_info.modified_time).strftime("%Y-%m-%d %H:%M:%S")
+                    
+                    writer.writerow([
+                        file_info.name,
+                        file_info.file_type.upper(),
+                        file_info.size,
+                        self._format_file_size(file_info.size),
+                        f"{file_info.quality * 100:.1f}",
+                        "Yes" if file_info.recoverable else "No",
+                        file_info.path,
+                        "Yes" if self._has_preview_content(file_info) else "No",
+                        created_str,
+                        modified_str
+                    ])
+            
+            QMessageBox.information(self, "Export Complete", f"File list exported to:\n{file_path}")
+            
+        except Exception as e:
+            QMessageBox.warning(self, "Export Error", f"Failed to export file list:\n{str(e)}")
+    
+    def _get_file_icon(self, file_type: str) -> str:
+        """Get emoji icon for file type."""
+        icons = {
+            'txt': '📝', 'doc': '📝', 'docx': '📝', 'rtf': '📝',
+            'pdf': '📄', 'html': '🌐', 'htm': '🌐',
+            'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️', 'bmp': '🖼️', 'webp': '🖼️', 'ico': '🖼️', 'svg': '🖼️',
+            'xls': '📊', 'xlsx': '📊', 'csv': '📊', 'ods': '📊',
+            'ppt': '📽️', 'pptx': '📽️',
+            'mp3': '🎵', 'wav': '🎵', 'flac': '🎵', 'aac': '🎵',
+            'mp4': '🎬', 'avi': '🎬', 'mov': '🎬', 'mkv': '🎬',
+            'zip': '📦', 'rar': '📦', '7z': '📦', 'tar': '📦',
+            'exe': '⚙️', 'msi': '⚙️', 'dll': '⚙️',
+            'sqlite': '🗃️', 'db': '🗃️', 'pst': '📧'
+        }
+        return icons.get(file_type.lower(), '📄')
+    
+    def _format_file_size(self, size_bytes: int) -> str:
+        """Format file size in human readable format."""
+        if size_bytes < 1024:
+            return f"{size_bytes} bytes"
+        elif size_bytes < 1024 * 1024:
+            return f"{size_bytes / 1024:.1f} KB"
+        elif size_bytes < 1024 * 1024 * 1024:
+            return f"{size_bytes / (1024 * 1024):.1f} MB"
+        else:
+            return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
+    
+    def _get_preview_content(self, file_info) -> Optional[str]:
+        """Get preview content for the file."""
+        try:
+            file_path = Path(file_info.path)
+            if not file_path.exists():
+                return "⚠️ File not accessible for preview (may be deleted or in unallocated space)"
+            
+            # Text files
+            if file_info.file_type.lower() in ['txt', 'log', 'ini', 'cfg', 'conf']:
+                try:
+                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        content = f.read(1000)  # First 1000 characters
+                        if len(content) == 1000:
+                            content += "\n\n... (file continues)"
+                        return content
+                except Exception:
+                    return "❌ Unable to read file content"
+            
+            # Image files - show basic info
+            elif file_info.file_type.lower() in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']:
+                return f"🖼️ Image file\nFormat: {file_info.file_type.upper()}\nSize: {self._format_file_size(file_info.size)}\n\n💡 Use an image viewer to see the actual image after recovery."
+            
+            # PDF files
+            elif file_info.file_type.lower() == 'pdf':
+                return f"📄 PDF Document\nSize: {self._format_file_size(file_info.size)}\n\n💡 Use a PDF viewer to read the document after recovery."
+            
+            # Archive files
+            elif file_info.file_type.lower() in ['zip', 'rar', '7z', 'tar']:
+                return f"📦 Archive file\nFormat: {file_info.file_type.upper()}\nSize: {self._format_file_size(file_info.size)}\n\n💡 Extract the archive after recovery to access its contents."
+            
+            # Media files
+            elif file_info.file_type.lower() in ['mp3', 'wav', 'flac', 'mp4', 'avi', 'mov']:
+                media_type = "🎵 Audio" if file_info.file_type.lower() in ['mp3', 'wav', 'flac'] else "🎬 Video"
+                return f"{media_type} file\nFormat: {file_info.file_type.upper()}\nSize: {self._format_file_size(file_info.size)}\n\n💡 Use a media player to play the file after recovery."
+            
+            else:
+                return f"📁 {file_info.file_type.upper()} file\nSize: {self._format_file_size(file_info.size)}\n\n💡 File preview not available for this format."
+                
+        except Exception as e:
+            return f"❌ Error generating preview: {str(e)}"
+    
+    def _has_preview_content(self, file_info) -> bool:
+        """Check if file has preview content available."""
+        try:
+            file_path = Path(file_info.path)
+            if not file_path.exists():
+                return False
+            
+            # Text files have preview
+            if file_info.file_type.lower() in ['txt', 'log', 'ini', 'cfg', 'conf']:
+                return True
+                
+            # All other file types have basic info preview
+            return True
+            
+        except Exception:
+            return False
+
+
 class FilePreviewDialog(QDialog):
     """Dialog for previewing recovered file information and content."""
     
@@ -328,7 +729,7 @@ class FilePreviewDialog(QDialog):
         
         # Content preview section
         if self.file_info.preview_available:
-            preview_label = QLabel("👁️ Content Preview")
+            preview_label = QLabel("🐱 Content Preview")
             preview_label.setFont(QFont("Arial", 14, QFont.Bold))
             layout.addWidget(preview_label)
             
@@ -1163,7 +1564,7 @@ class ResultsWidget(QWidget):
         select_none_btn.clicked.connect(self.select_no_files)
         button_layout.addWidget(select_none_btn)
         
-        preview_btn = QPushButton("👁️ Preview")
+        preview_btn = QPushButton("🐱 Preview")
         preview_btn.clicked.connect(self.preview_selected_file)
         button_layout.addWidget(preview_btn)
         
@@ -1279,19 +1680,14 @@ class ResultsWidget(QWidget):
             self.update_statistics()
     
     def preview_selected_file(self):
-        """Preview the selected file."""
+        """Preview the selected files with standardized table format."""
         selected = self.get_selected_files()
         if not selected:
-            QMessageBox.warning(self, "No File Selected", "Please select a file to preview first.")
+            QMessageBox.warning(self, "No File Selected", "Please select one or more files to preview first.")
             return
-            
-        if len(selected) > 1:
-            QMessageBox.information(self, "Multiple Files Selected", 
-                                   "Please select only one file for preview. Showing preview for the first selected file.")
         
-        # Show preview dialog for first selected file
-        file_info = selected[0]
-        preview_dialog = FilePreviewDialog(file_info, self)
+        # Use new multi-file preview dialog (handles both single and multiple files)
+        preview_dialog = MultiFilePreviewDialog(selected, self)
         preview_dialog.exec()
     
     def recover_selected_files(self):

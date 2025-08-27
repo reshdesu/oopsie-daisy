@@ -155,9 +155,15 @@ class HardwareMonitor(QObject):
                         temp_val = first_sensor[0].current
                         return temp_val
             
-            # Fallback methods for Linux
+            # Platform-specific fallback methods
             if self.system == "linux":
                 temp_val = self._get_linux_cpu_temp()
+                return temp_val
+            elif self.system == "windows":
+                temp_val = self._get_windows_cpu_temp()
+                return temp_val
+            elif self.system == "darwin":  # macOS
+                temp_val = self._get_macos_cpu_temp()
                 return temp_val
                 
         except Exception as e:
@@ -205,18 +211,159 @@ class HardwareMonitor(QObject):
             
         return None
     
+    def _get_windows_cpu_temp(self) -> Optional[float]:
+        """Get CPU temperature on Windows systems."""
+        try:
+            import subprocess
+            import json
+            
+            # Try Windows Management Instrumentation (WMI) via PowerShell
+            try:
+                # Get thermal zone information
+                cmd = [
+                    'powershell', '-Command',
+                    "Get-WmiObject -Namespace root/WMI -Class MSAcpi_ThermalZoneTemperature | Select-Object CurrentTemperature | ConvertTo-Json"
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=5, creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0)
+                
+                if result.returncode == 0 and result.stdout.strip():
+                    try:
+                        data = json.loads(result.stdout.strip())
+                        if isinstance(data, list) and len(data) > 0:
+                            # Temperature is in tenths of Kelvin, convert to Celsius
+                            kelvin_temp = data[0].get('CurrentTemperature', 0) / 10.0
+                            celsius_temp = kelvin_temp - 273.15
+                            if 0 <= celsius_temp <= 150:  # Reasonable range
+                                return celsius_temp
+                        elif isinstance(data, dict):
+                            kelvin_temp = data.get('CurrentTemperature', 0) / 10.0
+                            celsius_temp = kelvin_temp - 273.15
+                            if 0 <= celsius_temp <= 150:
+                                return celsius_temp
+                    except (json.JSONDecodeError, KeyError, TypeError):
+                        pass
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+            
+            # Alternative: Try Open Hardware Monitor if available
+            try:
+                # Check if OpenHardwareMonitor WMI is available
+                cmd = [
+                    'powershell', '-Command',
+                    "Get-WmiObject -Namespace root/OpenHardwareMonitor -Class Sensor | Where-Object {$_.SensorType -eq 'Temperature' -and $_.Name -like '*CPU*'} | Select-Object Value | ConvertTo-Json"
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=5, creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0)
+                
+                if result.returncode == 0 and result.stdout.strip():
+                    try:
+                        data = json.loads(result.stdout.strip())
+                        if isinstance(data, list) and len(data) > 0:
+                            temp = data[0].get('Value', 0)
+                        elif isinstance(data, dict):
+                            temp = data.get('Value', 0)
+                        else:
+                            temp = 0
+                            
+                        if 0 <= temp <= 150:
+                            return float(temp)
+                    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+                        pass
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+                
+        except Exception as e:
+            print(f"Windows CPU temp error: {e}")
+            
+        return None
+    
+    def _get_macos_cpu_temp(self) -> Optional[float]:
+        """Get CPU temperature on macOS systems."""
+        try:
+            import subprocess
+            
+            # Try using powermetrics (requires admin privileges)
+            try:
+                cmd = ['sudo', 'powermetrics', '--samplers', 'smc', '-n', '1', '-i', '1']
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                
+                if result.returncode == 0:
+                    # Parse powermetrics output for CPU temperature
+                    for line in result.stdout.split('\n'):
+                        if 'CPU die temperature' in line or 'CPU temp' in line:
+                            # Extract temperature value
+                            import re
+                            temp_match = re.search(r'(\d+\.?\d*)\s*C', line)
+                            if temp_match:
+                                temp = float(temp_match.group(1))
+                                if 0 <= temp <= 150:
+                                    return temp
+            except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.CalledProcessError):
+                pass
+            
+            # Try using system_profiler for thermal info
+            try:
+                cmd = ['system_profiler', 'SPHardwareDataType']
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                
+                if result.returncode == 0:
+                    # This doesn't give temperature but we can at least verify CPU info
+                    # Fall back to estimating based on CPU usage if needed
+                    pass
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+                
+            # Try using ioreg for sensor data
+            try:
+                cmd = ['ioreg', '-c', 'IOPMrootDomain', '-w', '0']
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                
+                if result.returncode == 0:
+                    # Parse ioreg output for temperature sensors
+                    import re
+                    for line in result.stdout.split('\n'):
+                        # Look for temperature-related entries
+                        if 'temp' in line.lower() or 'thermal' in line.lower():
+                            temp_match = re.search(r'(\d+\.?\d*)', line)
+                            if temp_match:
+                                temp = float(temp_match.group(1))
+                                # ioreg might give temperature in different units
+                                if temp > 200:  # Likely in Kelvin or other unit
+                                    temp = temp - 273.15  # Convert from Kelvin
+                                if 0 <= temp <= 150:
+                                    return temp
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+                
+        except Exception as e:
+            print(f"macOS CPU temp error: {e}")
+            
+        return None
+    
     def _get_all_gpu_stats(self) -> List[Dict]:
-        """Get stats for all available GPUs."""
+        """Get stats for all available GPUs across platforms."""
         gpu_list = []
         
         try:
-            # Try NVIDIA GPUs first
+            # NVIDIA GPUs (cross-platform via nvidia-smi)
             nvidia_gpus = self._get_all_nvidia_stats()
             gpu_list.extend(nvidia_gpus)
             
-            # Try AMD GPUs
-            amd_gpus = self._get_all_amd_stats()
-            gpu_list.extend(amd_gpus)
+            # Platform-specific GPU detection
+            if self.system == "linux":
+                amd_gpus = self._get_all_amd_linux_stats()
+                gpu_list.extend(amd_gpus)
+            elif self.system == "windows":
+                # Windows: AMD, Intel, and integrated GPUs
+                amd_gpus = self._get_all_amd_windows_stats()
+                gpu_list.extend(amd_gpus)
+                intel_gpus = self._get_all_intel_windows_stats()
+                gpu_list.extend(intel_gpus)
+            elif self.system == "darwin":  # macOS
+                # macOS: AMD and integrated GPUs
+                amd_gpus = self._get_all_amd_macos_stats()
+                gpu_list.extend(amd_gpus)
+                integrated_gpus = self._get_all_integrated_macos_stats()
+                gpu_list.extend(integrated_gpus)
             
         except Exception as e:
             print(f"Error getting all GPU stats: {e}")
@@ -326,8 +473,8 @@ class HardwareMonitor(QObject):
             
         return gpu_list
     
-    def _get_all_amd_stats(self) -> List[Dict]:
-        """Get stats for all AMD GPUs from sysfs."""
+    def _get_all_amd_linux_stats(self) -> List[Dict]:
+        """Get stats for all AMD GPUs from Linux sysfs."""
         gpu_list = []
         
         try:
@@ -388,6 +535,170 @@ class HardwareMonitor(QObject):
                             
         except Exception as e:
             print(f"AMD GPU enumeration error: {e}")
+            
+        return gpu_list
+    
+    def _get_all_amd_windows_stats(self) -> List[Dict]:
+        """Get stats for AMD GPUs on Windows."""
+        gpu_list = []
+        
+        try:
+            import subprocess
+            import json
+            
+            # Try using Windows Performance Toolkit or WMI
+            try:
+                # Get GPU information via PowerShell and WMI
+                cmd = [
+                    'powershell', '-Command',
+                    "Get-WmiObject -Class Win32_VideoController | Where-Object {$_.Name -like '*AMD*' -or $_.Name -like '*Radeon*'} | Select-Object Name, AdapterRAM | ConvertTo-Json"
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0)
+                
+                if result.returncode == 0 and result.stdout.strip():
+                    try:
+                        data = json.loads(result.stdout.strip())
+                        gpus_data = data if isinstance(data, list) else [data]
+                        
+                        for i, gpu_data in enumerate(gpus_data):
+                            gpu_name = gpu_data.get('Name', f'AMD GPU {i}')
+                            # Basic info - actual usage/temp would need more complex WMI or driver APIs
+                            gpu_list.append({
+                                'id': len(gpu_list),
+                                'name': gpu_name,
+                                'usage': 0.0,  # Would need AMD driver API or perfmon
+                                'temp': 0.0,    # Would need AMD driver API
+                                'vendor': 'AMD'
+                            })
+                    except (json.JSONDecodeError, KeyError, TypeError):
+                        pass
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+                
+        except Exception as e:
+            print(f"Windows AMD GPU error: {e}")
+            
+        return gpu_list
+    
+    def _get_all_intel_windows_stats(self) -> List[Dict]:
+        """Get stats for Intel GPUs on Windows."""
+        gpu_list = []
+        
+        try:
+            import subprocess
+            import json
+            
+            try:
+                # Get Intel GPU information
+                cmd = [
+                    'powershell', '-Command',
+                    "Get-WmiObject -Class Win32_VideoController | Where-Object {$_.Name -like '*Intel*'} | Select-Object Name, AdapterRAM | ConvertTo-Json"
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0)
+                
+                if result.returncode == 0 and result.stdout.strip():
+                    try:
+                        data = json.loads(result.stdout.strip())
+                        gpus_data = data if isinstance(data, list) else [data]
+                        
+                        for i, gpu_data in enumerate(gpus_data):
+                            gpu_name = gpu_data.get('Name', f'Intel GPU {i}')
+                            gpu_list.append({
+                                'id': len(gpu_list),
+                                'name': gpu_name,
+                                'usage': 0.0,  # Would need Intel driver API
+                                'temp': 0.0,    # Would need Intel driver API
+                                'vendor': 'Intel'
+                            })
+                    except (json.JSONDecodeError, KeyError, TypeError):
+                        pass
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+                
+        except Exception as e:
+            print(f"Windows Intel GPU error: {e}")
+            
+        return gpu_list
+    
+    def _get_all_amd_macos_stats(self) -> List[Dict]:
+        """Get stats for AMD GPUs on macOS."""
+        gpu_list = []
+        
+        try:
+            import subprocess
+            
+            # Use system_profiler to get GPU information
+            try:
+                cmd = ['system_profiler', 'SPDisplaysDataType', '-json']
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                
+                if result.returncode == 0:
+                    try:
+                        import json
+                        data = json.loads(result.stdout)
+                        
+                        displays = data.get('SPDisplaysDataType', [])
+                        for display in displays:
+                            gpu_name = display.get('sppci_model', 'Unknown GPU')
+                            vendor = display.get('sppci_vendor', '')
+                            
+                            if 'AMD' in vendor or 'Radeon' in gpu_name:
+                                gpu_list.append({
+                                    'id': len(gpu_list),
+                                    'name': gpu_name,
+                                    'usage': 0.0,  # macOS doesn't easily expose GPU usage
+                                    'temp': 0.0,    # Would need IOKit or system sensors
+                                    'vendor': 'AMD'
+                                })
+                    except (json.JSONDecodeError, KeyError):
+                        pass
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+                
+        except Exception as e:
+            print(f"macOS AMD GPU error: {e}")
+            
+        return gpu_list
+    
+    def _get_all_integrated_macos_stats(self) -> List[Dict]:
+        """Get stats for integrated GPUs on macOS (Intel, Apple Silicon)."""
+        gpu_list = []
+        
+        try:
+            import subprocess
+            
+            # Use system_profiler to get integrated GPU info
+            try:
+                cmd = ['system_profiler', 'SPDisplaysDataType', '-json']
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                
+                if result.returncode == 0:
+                    try:
+                        import json
+                        data = json.loads(result.stdout)
+                        
+                        displays = data.get('SPDisplaysDataType', [])
+                        for display in displays:
+                            gpu_name = display.get('sppci_model', 'Unknown GPU')
+                            vendor = display.get('sppci_vendor', '')
+                            
+                            if ('Intel' in vendor or 'Apple' in vendor or 
+                                'Integrated' in gpu_name or 'M1' in gpu_name or 
+                                'M2' in gpu_name or 'M3' in gpu_name):
+                                gpu_list.append({
+                                    'id': len(gpu_list),
+                                    'name': gpu_name,
+                                    'usage': 0.0,  # macOS doesn't easily expose GPU usage
+                                    'temp': 0.0,    # Would need specialized APIs
+                                    'vendor': 'Apple' if 'Apple' in vendor else 'Intel'
+                                })
+                    except (json.JSONDecodeError, KeyError):
+                        pass
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+                
+        except Exception as e:
+            print(f"macOS integrated GPU error: {e}")
             
         return gpu_list
     
